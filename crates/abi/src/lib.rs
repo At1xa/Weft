@@ -5839,6 +5839,9 @@ pub mod client_input {
     /// `text` typed into the focused field.
     pub const TYPE: u32 = 5;
     pub const RELEASE_ALL: u32 = 6;
+    /// `text`: an action whose press this frame doesn't count (held, it still holds), from a
+    /// `client_frame` callback, before the frame's input is handled.
+    pub const DROP_PRESS: u32 = 7;
 }
 
 /// Fields of `PlayerControl` to apply.

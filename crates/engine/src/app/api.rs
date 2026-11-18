@@ -317,6 +317,7 @@ pub unsafe extern "C" fn client_input(c: *mut abi::ClientCtx, op: u32, text: Str
                 r.input.release_all();
                 r.mod_held.clear();
             }
+            ci::DROP_PRESS => return r.input.drop_press(text) as u32,
             _ => return 0,
         }
         1

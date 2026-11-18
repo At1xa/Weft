@@ -243,6 +243,8 @@ pub struct Bind {
     on: [bool; SLOTS],
     fired: [bool; SLOTS],
     tapped: [Option<Instant>; SLOTS],
+    /// Its press this frame doesn't count (`drop_press`).
+    dropped: bool,
 }
 
 impl Bind {
@@ -256,6 +258,7 @@ impl Bind {
             on: [false; SLOTS],
             fired: [false; SLOTS],
             tapped: [None; SLOTS],
+            dropped: false,
         }
     }
 }
@@ -419,6 +422,9 @@ impl Input {
             return 0.0;
         }
         let b = &self.binds[i];
+        if pressed && b.dropped {
+            return 0.0;
+        }
         let keys = if pressed { &self.pressed } else { &self.held };
         let mut seen = [None; SLOTS];
         let mut amount = 0.0;
@@ -458,6 +464,14 @@ impl Input {
 
     pub fn scroll(&self) -> f32 {
         self.wheel_up - self.wheel_down
+    }
+
+    /// This frame the action's press doesn't count: what it does on a press doesn't happen, while
+    /// held it still holds. False for an action nobody registered.
+    pub fn drop_press(&mut self, action: &str) -> bool {
+        let Some(&i) = self.lookup.get(action) else { return false };
+        self.binds[i].dropped = true;
+        true
     }
 
     /// Switches the action off until its key is pressed again (a toggled sprint the server
@@ -631,6 +645,7 @@ impl Input {
     pub fn end_frame(&mut self) {
         for b in &mut self.binds {
             b.fired = [false; SLOTS];
+            b.dropped = false;
         }
         self.pressed.clear();
         self.released.clear();
@@ -985,6 +1000,18 @@ mod key_tests {
         i.captured = false;
         tap(&mut i, KeyCode::ShiftLeft);
         assert!(!i.held("core:sneak"));
+    }
+
+    #[test]
+    fn a_dropped_press_still_holds_for_that_frame_only() {
+        let mut i = input("core:attack", "mouse0");
+        i.key_down(Key::Mouse(0));
+        assert!(i.drop_press("core:attack") && !i.drop_press("nobody:this"));
+        assert!(!i.pressed("core:attack") && i.held("core:attack"));
+        i.end_frame();
+        i.key_up(Key::Mouse(0));
+        i.key_down(Key::Mouse(0));
+        assert!(i.pressed("core:attack"), "the next press counts");
     }
 
     #[test]

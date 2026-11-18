@@ -266,6 +266,15 @@ impl Client {
         self.input(abi::client_input::RELEASE_ALL, "", 0.0, 0.0);
     }
 
+    /// This frame the press of `key` (yours from `Registry::key`, or one of `keys::*`) doesn't
+    /// count: what it does on a press doesn't happen, for the engine or any mod, while held it
+    /// still holds. From `Registry::client_frame`, which runs before the frame's input is handled:
+    /// attacks ignored while using something is `if using { c.drop_press(&keys::ATTACK) }`.
+    /// False for a key nobody registered.
+    pub fn drop_press(&self, key: &Key) -> bool {
+        self.input(abi::client_input::DROP_PRESS, key.name(), 0.0, 0.0)
+    }
+
     /// What the key (yours from `Registry::key`, or one of `keys::*`) does now: pressed this
     /// frame, held, for how many ticks. Keys belong to the world: while a screen has the input
     /// they are up.
