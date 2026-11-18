@@ -1782,8 +1782,14 @@ impl EntityRenderer {
             }
             if let Some(p) = e.arm_swing {
                 let item = if e.swing_off { e.off_held.item } else { e.held.item };
-                let swing =
-                    if item == 0 && !in_view { act(Act::Swing) } else { m.action_seen(item, swapped(item, m.swing_of(item)), in_view) };
+                let name = swapped(item, m.swing_of(item));
+                // While using something, its `.using` swing where there is one (a sword blocking).
+                let using = e
+                    .using
+                    .map(|_| format!("{name}.using"))
+                    .filter(|u| !m.action_seen(item, u, in_view).is_empty());
+                let name = using.as_deref().unwrap_or(name);
+                let swing = if item == 0 && !in_view { act(Act::Swing) } else { m.action_seen(item, name, in_view) };
                 m.play(&mut clips, swing, &Play { progress: p, mirror: e.swing_off, ..progress });
             }
             if let Some((p, off)) = e.using {
