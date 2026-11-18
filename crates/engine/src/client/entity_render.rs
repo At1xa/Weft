@@ -45,6 +45,8 @@ pub struct Hand {
     pub bob: Option<(Vec3, f32, f32)>,
     /// The body shows too, not only what the clips bring up.
     pub body: bool,
+    /// An arm held in the view shows with what it holds (`camera::HELD_ARM`); else only the item does.
+    pub held_arm: bool,
 }
 
 /// A player's avatar: its model and what it is painted with.
@@ -1475,7 +1477,13 @@ impl EntityRenderer {
                     });
                 let (arms_up, kick) = self.view_motion(kind, root, &clips, standing, in_view, steady, eye);
                 self.camera_kick = kick;
-                own_hand = in_view.then_some((posed.len(), layers, layer_count, arms_up));
+                // Without `HELD_ARM` an arm holding something stays out of the view, its item drawn alone.
+                let holding = if hand.as_ref().is_some_and(|h| h.held_arm) {
+                    0
+                } else {
+                    (!e.held.is_empty() as u32) << role::ARM_RIGHT | (!e.off_held.is_empty() as u32) << role::ARM_LEFT
+                };
+                own_hand = in_view.then_some((posed.len(), layers, layer_count, arms_up & !holding));
                 for l in &mut layers[..layer_count] {
                     l.roles &= !(1 << role::HEAD | 1 << role::ON_HEAD | arms_up);
                 }

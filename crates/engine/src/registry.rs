@@ -3455,7 +3455,7 @@ fn engine_cameras() -> Vec<RawEntry> {
             .fold(RawEntry::engine(abi::entry_kind::CAMERA, name), |e, f| e.tag(f.0))
     };
     vec![
-        mode("core:first_person", cf::HAND | cf::HUD | cf::EFFECTS | cf::CYCLE),
+        mode("core:first_person", cf::HAND | cf::HELD_ARM | cf::HUD | cf::EFFECTS | cf::CYCLE),
         mode("core:behind", cf::BODY | cf::HUD | cf::BOB | cf::CLIP | cf::CYCLE),
         mode("core:front", cf::BODY | cf::HUD | cf::BOB | cf::CLIP | cf::CYCLE),
         mode("core:free", cf::BODY | cf::SOLID | cf::DETACHED | cf::NO_INTERACT)

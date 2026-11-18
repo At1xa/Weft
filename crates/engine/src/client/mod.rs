@@ -3268,6 +3268,7 @@ impl Client {
             lag: (self.player.pitch - self.hand_view.0, angle_diff(self.player.yaw, self.hand_view.1)),
             bob: self.hand_bob(),
             body: self.first_person_model,
+            held_arm: self.camera_has(crate::tag_bits::camera::HELD_ARM),
         });
         let me = (alive && (self.camera_has(crate::tag_bits::camera::BODY) || hand.is_some())).then_some(&self.me);
         let world = &self.world;

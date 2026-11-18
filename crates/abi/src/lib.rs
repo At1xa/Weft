@@ -747,6 +747,9 @@ pub mod comp {
         pub const BODY: &str = "camera.body";
         /// The first-person hand is drawn.
         pub const HAND: &str = "camera.hand";
+        /// With `HAND`, an arm is drawn with what it holds; without, only what it holds is (an empty
+        /// hand still shows its arm).
+        pub const HELD_ARM: &str = "camera.held_arm";
         /// The HUD and crosshair are drawn.
         pub const HUD: &str = "camera.hud";
         /// The player's effects move it: walking bob, the wider view sprinting and flying, the tilt
