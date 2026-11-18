@@ -254,10 +254,7 @@ impl Client {
             ToClient::EntitySwing { id, off } => {
                 let arriving = self.arriving_tick();
                 if let Some(e) = self.entities.get_mut(&id) {
-                    // Past halfway it starts over, as vanilla's.
-                    if e.arm_swing.is_none_or(|p| p >= 0.5) {
-                        e.swing_at = Some(arriving);
-                    }
+                    e.swung.start(arriving);
                     e.swing_off = off;
                 }
             }

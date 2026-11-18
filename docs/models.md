@@ -125,7 +125,7 @@ What plays goes by the name of an action, and that name is all there is to it. T
 | `hold` | something in hand (`hold_tool` for tools that don't have their own) | clock |
 | `hold_empty` | nothing in hand, for `.first_person` only by default | clock |
 | `equip` | the hand going down and up as it changes items or recharges | progress |
-| `swing`, `use` | swinging (`swing_held` with an item that has no `swing` of its own; `swing.using`, `swing_held.using` while it uses something, where there is one), and using what it holds | progress; seconds held for an item used until let go (a bow), staying at its end |
+| `swing`, `use` | swinging (`swing_held` with an item that has no `swing` of its own; `swing.using`, `swing_held.using` while it uses something, where there is one), and using what it holds | progress (a swing goes by vanilla's ticks: one at rest, six to its end, and one started over past halfway first finishes in a tick); seconds held for an item used until let go (a bow), staying at its end |
 | `death` | dying | clock |
 
 The engine has clips for all of these (`assets/animations/stock_*.animation.json`), picked by the shape of the model: walking on two legs, four, eight. So any model with the right [bone names](#roles) walks without a single keyframe. Your own clip of the same name takes over on the bones it names, and the stock one keeps moving the others.

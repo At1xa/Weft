@@ -154,7 +154,7 @@ pub struct ClientEntity {
     /// the tick it came, its swing, its use and its death started, and its crouching turned
     /// (tick, how far into the pose then, crouching).
     pub born: f64,
-    pub swing_at: Option<f64>,
+    pub swung: Swing,
     pub use_at: f64,
     pub died_at: f64,
     pub crouch_at: (f64, f32, bool),
@@ -361,7 +361,7 @@ impl ClientEntity {
             body_yaw: yaw,
             body_target: yaw,
             born: 0.0,
-            swing_at: None,
+            swung: Swing::default(),
             use_at: 0.0,
             died_at: 0.0,
             crouch_at: (0.0, 0.0, false),
@@ -696,7 +696,7 @@ pub struct Client {
     /// Show your own body in first person instead of just the hand.
     pub first_person_model: bool,
     /// Arm swing progress 0..1 while swinging.
-    hand_swing: Option<f32>,
+    hand_swing: Swing,
     /// That swing is the other hand's.
     hand_swing_off: bool,
     using_off: bool,
@@ -1080,7 +1080,7 @@ impl Client {
             cameras: camera::Cameras::default(),
             hide_gui: false,
             first_person_model: true,
-            hand_swing: None,
+            hand_swing: Swing::default(),
             hand_swing_off: false,
             using_off: false,
             hand_stack: ItemStack::default(),
@@ -1524,7 +1524,6 @@ impl Client {
     /// behind the view.
     fn animate_hand(&mut self, input: &Input, dt: f64) {
         let spectator = self.mode.has(crate::tag_bits::game_mode::NO_INTERACT);
-        advance_swing(&mut self.hand_swing, dt as f32);
         self.swap_hands(input);
         // A use swings only when the server says it did something (`ToClient::Swing`).
         if input.captured
@@ -2139,7 +2138,7 @@ impl Client {
             // Clips go by the server's ticks as shown: every client poses it alike at a tick.
             let since = |t: f64| ((at - t).max(0.0) / crate::world::TPS as f64) as f32;
             e.age = since(e.born);
-            e.arm_swing = e.swing_at.map(|t| since(t) / 0.3).filter(|&p| p < 1.0);
+            e.arm_swing = e.swung.at(at);
             let speed = (walked.unwrap_or(e.pos - before).with_y(0.0).length() / dt.max(1e-4)) as f32;
             e.walked += speed * dt as f32;
             e.walk += (e.walk_target - e.walk) * k as f32;
@@ -3018,11 +3017,14 @@ impl Client {
         cam
     }
 
-    /// Vanilla's swing: starts over once past halfway, which is the quick arm of holding a block
-    /// being mined.
+    /// Vanilla's swing (`Swing`), by the ticks of the game's clock.
     fn swing_arm(&mut self) {
-        restart_swing(&mut self.hand_swing);
+        self.hand_swing.start(self.swing_clock());
         self.hand_swing_off = false;
+    }
+
+    fn swing_clock(&self) -> f64 {
+        self.start.elapsed().as_secs_f64() * crate::world::TPS as f64
     }
 
     /// The camera drawn from, as its mode put it this frame (`camera::Cameras`).
@@ -3037,11 +3039,12 @@ impl Client {
         let (held, off_held) = (self.shown_held(), self.off_held());
         let into = |(held, all): (f32, f32)| if endless_use(all) { held / self.tick_rate as f32 } else { held / all.max(1.0) };
         let using = self.using.map(|u| (into(u), self.using_off));
+        let swing = self.hand_swing.at(self.swing_clock());
         let me = &mut self.me;
         me.use_ticks = self.using.map_or(0.0, |u| u.1);
         (me.yaw, me.target_yaw, me.pitch) = (self.player.yaw, self.player.yaw, self.player.pitch);
         (me.worn, me.held, me.off_held, me.using) = (worn, held, off_held, using);
-        (me.arm_swing, me.swing_off, me.pose) = (self.hand_swing, self.hand_swing_off, self.player.pose);
+        (me.arm_swing, me.swing_off, me.pose) = (swing, self.hand_swing_off, self.player.pose);
         me.sprinting = self.player.sprinting && self.player.on_ground;
         me.age = self.start.elapsed().as_secs_f32();
         self.player.swims_in = crate::content::swims_in(content(), self.me.kind, &self.me.worn);
@@ -3435,16 +3438,49 @@ mod eye_steps_tests {
     }
 }
 
-/// Vanilla's swing starts over once past halfway.
-fn restart_swing(swing: &mut Option<f32>) {
-    if swing.is_none_or(|p| p >= 0.5) {
-        *swing = Some(0.0);
+/// An arm's swing as vanilla draws it, by a clock in ticks: when it started,
+/// and where the swing it started over was. A tick at rest, then 0 to 1 over six; one started over
+/// first carries on to its end that tick, as vanilla's wraps instead of jumping back.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Swing(Option<(f64, Option<f32>)>);
+
+impl Swing {
+    /// Starts over unless less than halfway (by its own ticks): the quick arm of a block mined.
+    pub fn start(&mut self, now: f64) {
+        match self.0 {
+            Some((at, _)) if now - at < 4.0 => {}
+            _ => self.0 = Some((now, self.at(now))),
+        }
+    }
+
+    /// How far it is at `now`, 0 to 1; none when over.
+    pub fn at(&self, now: f64) -> Option<f32> {
+        let (at, from) = self.0?;
+        let s = (now - at).max(0.0) as f32;
+        if s < 1.0 { Some(from.map_or(0.0, |f| f + (1.0 - f) * s)) } else { (s < 7.0).then_some((s - 1.0) / 6.0) }
     }
 }
 
-/// An arm's swing goes on, 0.3 seconds from start to end.
-fn advance_swing(swing: &mut Option<f32>, dt: f32) {
-    *swing = swing.map(|p| p + dt / 0.3).filter(|&p| p < 1.0);
+#[cfg(test)]
+mod swing_tests {
+    use super::Swing;
+
+    /// Vanilla's swing counter: -1 on a swing, one more a tick, over at 6; started over from 3.
+    #[test]
+    fn swings_like_vanilla() {
+        let near = |a: Option<f32>, b: f32| a.is_some_and(|a| (a - b).abs() < 1e-6);
+        let mut s = Swing::default();
+        s.start(0.0);
+        assert!(near(s.at(0.5), 0.0) && near(s.at(1.0), 0.0), "a tick at rest");
+        assert!(near(s.at(4.0), 0.5) && s.at(7.0).is_none(), "six ticks to the end");
+        s.start(3.5);
+        assert!(near(s.at(3.5), 2.5 / 6.0), "not halfway: goes on");
+        s.start(5.0);
+        assert!(near(s.at(5.0), 4.0 / 6.0) && near(s.at(5.5), 5.0 / 6.0), "started over: to its end first");
+        assert!(near(s.at(6.0), 0.0) && near(s.at(7.0), 1.0 / 6.0));
+        s.start(6.5);
+        assert!(near(s.at(7.0), 1.0 / 6.0), "the new one, held on a block, goes on");
+    }
 }
 
 use crate::physics::angle_diff;
