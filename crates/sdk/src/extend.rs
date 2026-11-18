@@ -106,6 +106,9 @@ pub mod question {
     /// goes beyond it and doesn't knock (`core:hurt_cooldown`). Deny it for a weapon that
     /// ignores the pause.
     pub static RECOVERING: Question = Question::named(crate::abi::question::RECOVERING);
+    /// Whether knockback lifts `entity` only on the ground (`core:vanilla_ground_lift`); taking
+    /// that step out lifts it in the air too.
+    pub static GROUND_LIFT: Question = Question::named(crate::abi::question::GROUND_LIFT);
 }
 
 /// The engine's value chains (`Registry::modify`, `World::chain_compute`).

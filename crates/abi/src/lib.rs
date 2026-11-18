@@ -5356,6 +5356,9 @@ pub mod question {
     /// beyond the last lands, and it doesn't knock; from no: `core:hurt_cooldown` (`BASE`: its
     /// `attribute::HURT_COOLDOWN` hasn't run out, and `cause` doesn't ignore it).
     pub const RECOVERING: &str = "core:recovering";
+    /// Whether knockback lifts `entity` only while it stands on the ground, as modern's does; no
+    /// lifts it in the air too; from no: `core:vanilla_ground_lift` (`BASE`: yes).
+    pub const GROUND_LIFT: &str = "core:ground_lift";
 }
 
 /// What a question or a value chain is about; fields one does not use are 0.

@@ -149,15 +149,16 @@ pub fn gravity_per_tick(gravity: f64) -> f64 {
 }
 
 /// Vanilla's knockback, in blocks per tick: half the speed, `push` away (flat, its length the
-/// strength, a hurt's 0.4) and on the ground as much up, never more than 0.4 up; `resist`
-/// (`KNOCKBACK_RESISTANCE`) takes its share off, all of it leaving the speed alone.
-pub fn knock(vel: DVec3, push: DVec3, on_ground: bool, resist: f64) -> DVec3 {
+/// strength, a hurt's 0.4) and, with `lift`, as much up, never more than 0.4 up; `resist`
+/// (`KNOCKBACK_RESISTANCE`) takes its share off, all of it leaving the speed alone. `lift` is
+/// being on the ground, or always where `question::GROUND_LIFT` says no.
+pub fn knock(vel: DVec3, push: DVec3, lift: bool, resist: f64) -> DVec3 {
     let push = push.with_y(0.0) * (1.0 - resist.clamp(0.0, 1.0));
     let strength = push.length();
     if strength <= 0.0 {
         return vel;
     }
-    let y = if on_ground { (vel.y / 2.0 + strength).min(0.4) } else { vel.y };
+    let y = if lift { (vel.y / 2.0 + strength).min(0.4) } else { vel.y };
     DVec3::new(vel.x / 2.0 + push.x, y, vel.z / 2.0 + push.z)
 }
 

@@ -411,8 +411,9 @@ messages! {
         Inventory(Vec<(u32, ItemStack)>),
         /// Own synced components: (component id, bytes).
         Components(Vec<(u32, Vec<u8>)>),
-        /// A hit knocks the player back, `away` being flat and of length 1 (`physics::knock`).
-        Knock { push: [f32; 3] },
+        /// A hit knocks the player back, `away` being flat and of length 1 (`physics::knock`);
+        /// `ground_lift`: it lifts only on the ground (`question::GROUND_LIFT`).
+        Knock { push: [f32; 3], ground_lift: bool },
         /// Velocity change in blocks per tick (a mod's push, a sprinting hit).
         Velocity { add: [f32; 3] },
         /// A mod set the player's velocity, in blocks per tick.

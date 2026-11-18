@@ -131,6 +131,11 @@ fn vanilla_sweep(d: &mut Dim, _space_id: u64, c: &'static Content, q: &abi::Quer
     }
 }
 
+/// Modern's: knockback lifts only what stands on the ground.
+fn vanilla_ground_lift(_: &mut Dim, _space_id: u64, _: &'static Content, _: &abi::Query, s: &mut Calc) {
+    s.value = 1.0;
+}
+
 fn sweep_damage(d: &mut Dim, _space_id: u64, c: &'static Content, q: &abi::Query, s: &mut Calc) {
     s.value = 1.0 + d.attribute_for(_space_id, c, crate::registry::attr::SWEEPING_DAMAGE_RATIO, q, false) * s.value;
 }
@@ -248,6 +253,7 @@ pub const NATIVE: &[(&str, Option<&str>, &str, Native)] = &[
     ("core:resistance", Some(abi::chain::DAMAGE), abi::phase::FINAL, resistance),
     ("core:not_lethal", Some(abi::chain::DAMAGE), abi::phase::FINAL, not_lethal),
     ("core:hurt_cooldown", Some(abi::question::RECOVERING), abi::phase::BASE, hurt_cooldown),
+    ("core:vanilla_ground_lift", Some(abi::question::GROUND_LIFT), abi::phase::BASE, vanilla_ground_lift),
     ("core:effect_immune", Some(abi::action::EFFECT), abi::phase::BASE, effect_immune),
     ("core:by_speed", Some(abi::chain::PROJECTILE_DAMAGE), abi::phase::BASE, by_speed),
     ("core:safe_fall", Some(abi::chain::FALL_DAMAGE), abi::phase::BASE, safe_fall),

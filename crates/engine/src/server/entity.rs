@@ -516,7 +516,8 @@ pub struct Entities {
 /// Velocities in blocks per tick, like the client's own.
 #[derive(Clone, Copy)]
 pub enum Told {
-    Knock([f32; 3]),
+    /// A push, and whether it lifts only on the ground (`question::GROUND_LIFT`).
+    Knock([f32; 3], bool),
     Add([f32; 3]),
     Velocity([f32; 3]),
     Look([f32; 2]),

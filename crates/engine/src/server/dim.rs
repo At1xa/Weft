@@ -1718,13 +1718,16 @@ impl Dim {
     /// `KNOCKBACK_RESISTANCE`; a player's client applies its own.
     pub fn knock(&mut self, space_id: u64, c: &'static Content, id: u64, push: DVec3) {
         let resist = self.attribute(space_id, c, id, crate::registry::attr::KNOCKBACK_RESISTANCE, false);
+        let q = abi::Query { entity: id, ..abi::Query::DEFAULT };
+        let ground_lift = self.ask_or(space_id, c, abi::question::GROUND_LIFT, &q, false);
         let Some(e) = self.entities.get_mut(id) else { return };
         if e.player {
             self.entities
                 .told
-                .push((id, Told::Knock(push.as_vec3().to_array())));
+                .push((id, Told::Knock(push.as_vec3().to_array(), ground_lift)));
         } else {
-            e.vel = crate::physics::knock(e.vel * crate::world::TICK, push, e.on_ground, resist) * crate::world::TPS as f64;
+            let lift = e.on_ground || !ground_lift;
+            e.vel = crate::physics::knock(e.vel * crate::world::TICK, push, lift, resist) * crate::world::TPS as f64;
         }
     }
 
