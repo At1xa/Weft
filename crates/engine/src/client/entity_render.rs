@@ -1757,7 +1757,7 @@ impl EntityRenderer {
             // other hand, or with something there, plays what it has for one.
             let hold_in = |item: u32, busy: bool| -> &str {
                 let one = if busy && crate::content::two_handed(c, item) { crate::content::one_handed_action(c, item) } else { None };
-                one.unwrap_or_else(|| swapped(item, hold_of(c, m, item)))
+                one.unwrap_or_else(|| swapped(item, hold_of(c, m, item, in_view)))
             };
             let held_how = Play { looping: true, aim: true, hand: true, ..how };
             if e.held.item != 0 {
@@ -2273,10 +2273,22 @@ fn held_transform(arm: Mat4, item: u32, solid: bool, off: bool, display: Option<
         * Mat4::from_translation(Vec3::splat(-0.5))
 }
 
-/// How an item is held unless it says: a long tool lower down.
-fn hold_of(c: &crate::content::Content, m: &super::models::KindModel, item: u32) -> &'static str {
-    let tool = c.item_has(item, c.ids.handheld);
-    if tool && !m.has_own(item, "hold") { "hold_tool" } else { "hold" }
+/// How an item is held unless it says: a long tool lower down, and an item drawn as a block
+/// its own way where the model has a `hold_block` for this view.
+fn hold_of(c: &crate::content::Content, m: &super::models::KindModel, item: u32, in_view: bool) -> &'static str {
+    if m.has_own(item, "hold") {
+        return "hold";
+    }
+    if c.item_has(item, c.ids.handheld) {
+        return "hold_tool";
+    }
+    let stack = weft_abi::ItemStack { item, ..Default::default() };
+    let block = || {
+        super::looks::current()
+            .item_draw(c, &stack, None, "west")
+            .solid()
+    };
+    if !m.action_seen(0, "hold_block", in_view).is_empty() && block() { "hold_block" } else { "hold" }
 }
 
 /// From the shoulder to the palm, along the arm.

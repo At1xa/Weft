@@ -122,7 +122,7 @@ What plays goes by the name of an action, and that name is all there is to it. T
 | `idle` | always | clock |
 | `walk` | walking, more the faster | distance walked |
 | `sneak`, `swim`, `crawl` | in that pose (`crawl` falls back on `swim`) | clock, distance |
-| `hold` | something in hand (`hold_tool` for tools that don't have their own) | clock |
+| `hold` | something in hand (`hold_tool` for tools that don't have their own, `hold_block` for what is drawn as a block where the model has one) | clock |
 | `hold_empty` | nothing in hand, for `.first_person` only by default | clock |
 | `equip` | the hand going down and up as it changes items or recharges | progress |
 | `swing`, `use` | swinging (`swing_held` with an item that has no `swing` of its own; `swing.using`, `swing_held.using` while it uses something, where there is one), and using what it holds | progress (a swing goes by vanilla's ticks: one at rest, six to its end, and one started over past halfway first finishes in a tick); seconds held for an item used until let go (a bow), staying at its end |
