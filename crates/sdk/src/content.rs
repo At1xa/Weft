@@ -648,6 +648,11 @@ impl PoseBuilder<'_> {
     pub fn eye_steps(self, taking: f32, leaving: f32) -> Self {
         self.set(&crate::comps::pose::EYE_STEPS, [taking, leaving])
     }
+    /// Seconds its look takes to come in and go out, 0.1 unless set, 0 at once. Only the crouch's
+    /// is read, for its sneak clip.
+    pub fn blend(self, secs: f32) -> Self {
+        self.set(&crate::comps::pose::BLEND, secs)
+    }
     /// Walking speed as a share of normal, 0 to stay put.
     pub fn speed(self, share: f32) -> Self {
         self.set(&crate::comps::pose::SPEED, share)

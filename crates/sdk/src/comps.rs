@@ -53,6 +53,7 @@ pub mod pose {
     pub static FALLBACK: Component<Vec<String>, Pose> = Component::named(p::FALLBACK);
     pub static WHEN: Component<Vec<String>, Pose> = Component::named(p::WHEN);
     pub static EYE_STEPS: Component<[f32; 2], Pose> = Component::named(p::EYE_STEPS);
+    pub static BLEND: Component<f32, Pose> = Component::named(p::BLEND);
 }
 
 /// What a game mode is made of: a tag per ability (`abi::comp::game_mode::FLAGS`) and the

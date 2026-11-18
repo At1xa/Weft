@@ -4,7 +4,7 @@
 
 ## Poses
 
-Poses are values too: `r.pose(&SIT).height(0.7).eye(0.62).speed(0.0).action("sit")` registers one (`tilt(pose_tilt::FACE_DOWN)` lays the model down; `eye_steps(1.0, 0.6)` moves the eyes per tick, that share of the way on taking it and on leaving it, instead of easing them over a few frames), and `w.set_pose(id, Some(&SIT), None)` holds a mob or a player in it until `None` (with a facing in degrees it also stays still and turned so, the way a bed lays a player down). The engine still picks standing, crouching, swimming and crawling (`keys::CRAWL` held, or no room for more) by itself while nothing holds the pose, for a mob too if its kind has `.poses()`
+Poses are values too: `r.pose(&SIT).height(0.7).eye(0.62).speed(0.0).action("sit")` registers one (`tilt(pose_tilt::FACE_DOWN)` lays the model down; `eye_steps(1.0, 0.6)` moves the eyes per tick, that share of the way on taking it and on leaving it, instead of easing them over a few frames; `blend(0.0)` brings its look in and out at once, the crouch's sneak clip, which otherwise takes 0.1 seconds), and `w.set_pose(id, Some(&SIT), None)` holds a mob or a player in it until `None` (with a facing in degrees it also stays still and turned so, the way a bed lays a player down). The engine still picks standing, crouching, swimming and crawling (`keys::CRAWL` held, or no room for more) by itself while nothing holds the pose, for a mob too if its kind has `.poses()`
 
 ## Game modes
 

@@ -646,8 +646,10 @@ pub mod comp {
     /// an action), `WHEN` (`[str]`, conditions that all hold, `in_liquid`, `!flying`), `FALLBACK`
     /// (`[str]` poses where it has no room), `EYE_STEPS` (`[f32;2]`, the share of the way the eyes
     /// go each tick on taking it and on leaving it, as a sneak's 1 and 0.6; none: they ease
-    /// over a few frames).
+    /// over a few frames), `BLEND` (`f32`, seconds its look takes to come and go, 0.1 unless set,
+    /// 0 at once; only the crouch's is read, for its sneak clip).
     pub mod pose {
+        pub const BLEND: &str = "pose.blend";
         pub const EYE_STEPS: &str = "pose.eye_steps";
         pub const HEIGHT: &str = "pose.height";
         pub const EYE: &str = "pose.eye";

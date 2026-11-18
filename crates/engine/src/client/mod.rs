@@ -321,9 +321,14 @@ fn parse_swaps(bytes: &[u8]) -> Vec<(String, String)> {
         .collect()
 }
 
-/// A pose comes and goes in about a tenth of a second.
+/// Seconds the crouch's look takes to come and go (`pose::BLEND`), at least a millisecond.
+fn crouch_blend() -> f32 {
+    Pose::CROUCH.def().blend.max(1e-3)
+}
+
+/// A pose comes and goes over `crouch_blend` seconds.
 fn fade_pose(now: f32, on: bool, dt: f32) -> f32 {
-    (now + if on { dt } else { -dt } / 0.1).clamp(0.0, 1.0)
+    (now + if on { dt } else { -dt } / crouch_blend()).clamp(0.0, 1.0)
 }
 
 impl ClientEntity {
@@ -2140,7 +2145,7 @@ impl Client {
             e.walk += (e.walk_target - e.walk) * k as f32;
             e.swing += (e.swing_target - e.swing) * k as f32;
             let (turned, from, crouching) = e.crouch_at;
-            e.crouched = (from + if crouching { 1.0 } else { -1.0 } * since(turned) / 0.1).clamp(0.0, 1.0);
+            e.crouched = (from + if crouching { 1.0 } else { -1.0 } * since(turned) / crouch_blend()).clamp(0.0, 1.0);
             if let Some((p, _)) = &mut e.using {
                 let secs = since(e.use_at);
                 *p = if endless_use(e.use_ticks) { secs } else { (secs * crate::world::TPS as f32 / e.use_ticks.max(1.0)).min(1.0) };
