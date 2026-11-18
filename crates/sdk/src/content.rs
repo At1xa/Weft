@@ -642,6 +642,12 @@ impl PoseBuilder<'_> {
     pub fn eye(self, share: f32) -> Self {
         self.set(&crate::comps::pose::EYE, share)
     }
+    /// The eyes go per tick, by these shares of the way left, on taking it and on leaving it,
+    /// instead of easing over a few frames: `eye_steps(1.0, 0.6)` goes down in one tick
+    /// and up slower.
+    pub fn eye_steps(self, taking: f32, leaving: f32) -> Self {
+        self.set(&crate::comps::pose::EYE_STEPS, [taking, leaving])
+    }
     /// Walking speed as a share of normal, 0 to stay put.
     pub fn speed(self, share: f32) -> Self {
         self.set(&crate::comps::pose::SPEED, share)

@@ -697,6 +697,8 @@ pub struct Client {
     hand_stack: ItemStack,
     /// How far the hand is up, 0..1.
     hand_height: f32,
+    /// The eyes stepped per tick while a pose says so (`pose::EYE_STEPS`).
+    eye_steps: EyeSteps,
     /// Seconds since the last swing or change of items, and what was in hand then, as the server
     /// judges a hit by.
     swing_since: f32,
@@ -1075,6 +1077,7 @@ impl Client {
             using_off: false,
             hand_stack: ItemStack::default(),
             hand_height: 1.0,
+            eye_steps: EyeSteps::default(),
             swing_since: 1000.0,
             swing_held: ItemStack::default(),
             night_vision: 0.0,
@@ -1449,7 +1452,10 @@ impl Client {
     fn ease_camera(&mut self, input: &Input, dt: f64) {
         let k = (dt * 12.0).min(1.0);
         let eye_target = self.player.dims().eye;
-        self.player.eye += (eye_target - self.player.eye) * k;
+        // A pose may say how its eyes go per tick instead: they step with the body (`step_physics`).
+        if !self.eye_steps.ticking {
+            self.player.eye += (eye_target - self.player.eye) * k;
+        }
         // Running as it does, not the key held: no wider view too hungry to sprint.
         let wider = if self.player.flying { 0.1 } else { 0.0 } + if self.player.sprinting { 0.15 } else { 0.0 };
         let fov_target = 1.0 + wider * self.fov_effects;
@@ -1648,6 +1654,9 @@ impl Client {
                     let seen = physics::ObservedCells { cells: block, dry: &dry };
                     step_player(&mut self.player, input, &seen, gravity, &bodies);
                 }
+                let share = self.eye_steps.share(self.player.pose);
+                let target = self.player.dims().eye;
+                self.eye_steps.tick(share, self.player.eye, target);
                 let entities = &self.entities;
                 let p = &self.player;
                 self.player.riding = p.support.and_then(|b| {
@@ -1672,6 +1681,10 @@ impl Client {
                     );
                 }
             }
+        }
+        // Eyes going by ticks are drawn between their last two, as the body is (`smooth_pos`).
+        if self.eye_steps.ticking {
+            self.player.eye = self.eye_steps.at((self.accum / STEP).clamp(0.0, 1.0));
         }
         for _ in 0..ambient_steps {
             self.ambient();
@@ -3334,6 +3347,77 @@ pub(crate) fn endless_use(ticks: f32) -> bool {
 /// `v` turned about the up axis by `yaw` radians, as models turn with their yaw.
 fn turn_y(v: DVec3, yaw: f32) -> DVec3 {
     glam::DQuat::from_rotation_y(yaw as f64) * v
+}
+
+/// The eyes going by ticks (`pose::EYE_STEPS`): each of the player's ticks a share of the way,
+/// on the tick the pose changes too, drawn between the last two ticks' heights.
+struct EyeSteps {
+    /// The pose now, and the one before it, whose leaving share applies when this has none.
+    pose: Pose,
+    from: Pose,
+    ticking: bool,
+    /// The heights at the last two ticks.
+    last: f64,
+    now: f64,
+}
+
+impl Default for EyeSteps {
+    fn default() -> Self {
+        EyeSteps { pose: Pose::STAND, from: Pose::STAND, ticking: false, last: 0.0, now: 0.0 }
+    }
+}
+
+impl EyeSteps {
+    /// The share of the way the eyes go this tick in `pose`, if they go by ticks.
+    fn share(&mut self, pose: Pose) -> Option<f64> {
+        if pose != self.pose {
+            (self.from, self.pose) = (self.pose, pose);
+        }
+        self.pose
+            .def()
+            .eye_steps
+            .map(|v| v[0])
+            .or_else(|| self.from.def().eye_steps.map(|v| v[1]))
+    }
+
+    /// One tick: `share` of the way to `target`, from `shown` if they weren't going by ticks.
+    fn tick(&mut self, share: Option<f64>, shown: f64, target: f64) {
+        let Some(share) = share else {
+            self.ticking = false;
+            return;
+        };
+        if !self.ticking {
+            (self.ticking, self.now) = (true, shown);
+        }
+        self.last = self.now;
+        self.now += (target - self.now) * share;
+    }
+
+    /// The height drawn `t` (0 to 1) of the way through the tick after the last.
+    fn at(&self, t: f64) -> f64 {
+        self.last + (self.now - self.last) * t
+    }
+}
+
+#[cfg(test)]
+mod eye_steps_tests {
+    use super::EyeSteps;
+
+    /// A sneak stepping its eyes: at the end of the tick it starts the last
+    /// height is kept and the new one set, 1.54 sneaking and 0.6 of the way up after; drawn between.
+    #[test]
+    fn steps_like_a_sneak() {
+        let near = |a: f64, b: f64| (a - b).abs() < 1e-9;
+        let mut s = EyeSteps::default();
+        s.tick(Some(1.0), 1.62, 1.54);
+        assert!(near(s.at(0.0), 1.62) && near(s.at(0.5), 1.58) && near(s.at(1.0), 1.54), "down over the tick it starts");
+        s.tick(Some(0.6), 1.54, 1.62);
+        assert!(near(s.at(0.0), 1.54) && near(s.at(1.0), 1.62 - 0.08 * 0.4), "up 0.6 of the way a tick");
+        s.tick(Some(0.6), 1.54, 1.62);
+        assert!(near(s.at(1.0), 1.62 - 0.08 * 0.16));
+        s.tick(None, 1.6, 1.62);
+        assert!(!s.ticking, "a pose without steps eases again");
+    }
 }
 
 /// Vanilla's swing starts over once past halfway.

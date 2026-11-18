@@ -644,8 +644,11 @@ pub mod comp {
     /// A pose's, as shares of standing (1 unless set): `HEIGHT`, `EYE`, `SPEED`; `TILT` (`u32`,
     /// `pose_tilt`), `ACTION` (`str`, the clip), tag `NO_BOB`, `PRIORITY` (`i32`), `KEY` (`str`,
     /// an action), `WHEN` (`[str]`, conditions that all hold, `in_liquid`, `!flying`), `FALLBACK`
-    /// (`[str]` poses where it has no room).
+    /// (`[str]` poses where it has no room), `EYE_STEPS` (`[f32;2]`, the share of the way the eyes
+    /// go each tick on taking it and on leaving it, as a sneak's 1 and 0.6; none: they ease
+    /// over a few frames).
     pub mod pose {
+        pub const EYE_STEPS: &str = "pose.eye_steps";
         pub const HEIGHT: &str = "pose.height";
         pub const EYE: &str = "pose.eye";
         pub const SPEED: &str = "pose.speed";

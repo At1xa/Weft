@@ -1207,6 +1207,8 @@ pub struct PoseDef {
     pub action: String,
     /// The camera bobs while walking in it.
     pub bob: bool,
+    /// Share of the way the eyes go each tick on taking it and on leaving it (`pose::EYE_STEPS`).
+    pub eye_steps: Option<[f64; 2]>,
     pub priority: i32,
     /// The action held for it, empty for none.
     pub key: String,
@@ -1263,6 +1265,10 @@ fn bake_pose(e: &Entry, conds: &mut crate::conditions::Texts) -> PoseDef {
         tilt: e.or(p::TILT, 0u32).min(abi::pose_tilt::ON_BACK),
         action: e.text(p::ACTION).unwrap_or_default().to_string(),
         bob: !e.has(p::NO_BOB),
+        eye_steps: e
+            .get::<[f32; 2]>(p::EYE_STEPS)
+            .filter(|s| s.iter().all(|v| *v > 0.0 && *v <= 1.0))
+            .map(|s| s.map(f64::from)),
         priority: e.or(p::PRIORITY, 0),
         key: e.text(p::KEY).unwrap_or_default().to_string(),
         when: conds.all(&e.or::<Vec<String>>(p::WHEN, Vec::new())),
