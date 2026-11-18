@@ -68,6 +68,8 @@ pub struct LocalPlayer {
     /// Smoothed eye height (lower while sneaking) and field of view multiplier (wider while
     /// sprinting or flying).
     pub eye: f64,
+    /// How high the eyes may be: under a block above where its pose has them over its box.
+    pub eye_room: f64,
     pub fov_mul: f32,
     /// The `fov` attribute (a bow drawn), eased the same way.
     pub zoom: f32,
@@ -979,6 +981,7 @@ impl Client {
                 jumped: false,
                 jump_cooldown: 0,
                 eye: 1.62,
+                eye_room: f64::INFINITY,
                 fov_mul: 1.0,
                 zoom: 1.0,
                 pose: Pose::STAND,
@@ -1451,11 +1454,12 @@ impl Client {
     /// Eye and view widen or drop over a few frames like vanilla, not in one jump.
     fn ease_camera(&mut self, input: &Input, dt: f64) {
         let k = (dt * 12.0).min(1.0);
-        let eye_target = self.player.dims().eye;
+        let eye_target = self.player.dims().eye.min(self.player.eye_room);
         // A pose may say how its eyes go per tick instead: they step with the body (`step_physics`).
         if !self.eye_steps.ticking {
             self.player.eye += (eye_target - self.player.eye) * k;
         }
+        self.player.eye = self.player.eye.min(self.player.eye_room);
         // Running as it does, not the key held: no wider view too hungry to sprint.
         let wider = if self.player.flying { 0.1 } else { 0.0 } + if self.player.sprinting { 0.15 } else { 0.0 };
         let fov_target = 1.0 + wider * self.fov_effects;
@@ -1655,7 +1659,7 @@ impl Client {
                     step_player(&mut self.player, input, &seen, gravity, &bodies);
                 }
                 let share = self.eye_steps.share(self.player.pose);
-                let target = self.player.dims().eye;
+                let target = self.player.dims().eye.min(self.player.eye_room);
                 self.eye_steps.tick(share, self.player.eye, target);
                 let entities = &self.entities;
                 let p = &self.player;
@@ -1684,7 +1688,10 @@ impl Client {
         }
         // Eyes going by ticks are drawn between their last two, as the body is (`smooth_pos`).
         if self.eye_steps.ticking {
-            self.player.eye = self.eye_steps.at((self.accum / STEP).clamp(0.0, 1.0));
+            self.player.eye = self
+                .eye_steps
+                .at((self.accum / STEP).clamp(0.0, 1.0))
+                .min(self.player.eye_room);
         }
         for _ in 0..ambient_steps {
             self.ambient();
@@ -3349,6 +3356,9 @@ fn turn_y(v: DVec3, yaw: f32) -> DVec3 {
     glam::DQuat::from_rotation_y(yaw as f64) * v
 }
 
+/// How far under a block above the eyes stay: the camera's near plane.
+const EYE_CLEARANCE: f64 = 0.05;
+
 /// The eyes going by ticks (`pose::EYE_STEPS`): each of the player's ticks a share of the way,
 /// on the tick the pose changes too, drawn between the last two ticks' heights.
 struct EyeSteps {
@@ -3494,6 +3504,18 @@ fn step_player(p: &mut LocalPlayer, input: &Input, block: &impl physics::Cells, 
         p.noclip || !physics::occupied(c, block, bodies, 0, physics::Aabb::around(p.pos, dims.half_width - 1e-3, dims.height))
     };
     p.pose = Pose::choose(p.forced.map(|f| f.0), holds, fits);
+    // Eyes a pose has above its box (a sneak's eyes over a lower box) stay under a block
+    // right above, as the near plane would otherwise see into it.
+    let dims = p.dims();
+    let room = dims.eye + EYE_CLEARANCE;
+    p.eye_room = if room > dims.height
+        && !p.noclip
+        && physics::occupied(c, block, bodies, 0, physics::Aabb::around(p.pos, dims.half_width - 1e-3, room))
+    {
+        dims.height - EYE_CLEARANCE
+    } else {
+        f64::INFINITY
+    };
     // Sprinting swims in a pose for it, lying down; in a liquid it is no use otherwise.
     let swimming = sprint && in_swim_liquid && p.pose.def().tilt != weft_abi::pose_tilt::UPRIGHT;
     let sprint = sprint && (swimming || !feet_wet);
