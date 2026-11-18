@@ -1536,6 +1536,7 @@ pub mod attr {
     pub const AIR_CONTROL: u32 = 30;
     pub const SLIPPERINESS: u32 = 31;
     pub const CLIMB_SPEED: u32 = 32;
+    pub const STOP_SPEED: u32 = 33;
 }
 
 fn engine_attributes() -> Vec<RawEntry> {
@@ -1575,6 +1576,7 @@ fn engine_attributes() -> Vec<RawEntry> {
         (a::AIR_CONTROL, 1.0, 0.0, 16.0),
         (a::SLIPPERINESS, 1.0, 0.0, 2.0),
         (a::CLIMB_SPEED, 1.0, 0.0, 16.0),
+        (a::STOP_SPEED, 0.0, 0.0, 1.0),
     ]
     .iter()
     .map(|&(name, default, min, max)| {

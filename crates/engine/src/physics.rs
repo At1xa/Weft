@@ -1653,11 +1653,13 @@ pub struct Moves {
     pub air: f64,
     pub slip: f64,
     pub climb: f64,
+    /// Below this a speed stops at the start of a tick (0).
+    pub stop: f64,
 }
 
 impl Default for Moves {
     fn default() -> Self {
-        Moves { step: 0.6, gravity: 1.0, swim: 1.0, fly: 1.0, air: 1.0, slip: 1.0, climb: 1.0 }
+        Moves { step: 0.6, gravity: 1.0, swim: 1.0, fly: 1.0, air: 1.0, slip: 1.0, climb: 1.0, stop: 0.0 }
     }
 }
 
@@ -1673,6 +1675,7 @@ impl Moves {
             air: attr(a::AIR_CONTROL),
             slip: attr(a::SLIPPERINESS),
             climb: attr(a::CLIMB_SPEED),
+            stop: attr(a::STOP_SPEED),
         }
     }
 }
@@ -1700,6 +1703,8 @@ pub fn walk(
     ctl: &Control,
     f: &Frame,
 ) -> Walked {
+    // Speeds too small to matter stop first (`attribute::STOP_SPEED`), each way on its own.
+    *vel = DVec3::select(vel.abs().cmplt(DVec3::splat(f.moves.stop)), DVec3::ZERO, *vel);
     let feet = pos.floor().as_ivec3();
     let started_in = around(c, block, *pos, f.height, f.half_width);
     let Around { in_liquid: liquid, climbing } = started_in;

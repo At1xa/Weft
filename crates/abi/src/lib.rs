@@ -5555,6 +5555,9 @@ pub mod attribute {
     pub const SLIPPERINESS: &str = "core:slipperiness";
     /// Multiplier on how fast it goes up and down ladders and vines (1).
     pub const CLIMB_SPEED: &str = "core:climb_speed";
+    /// Below this (blocks a tick, each way on its own) a speed stops at the start of a tick, before
+    /// a jump and the push of that tick (0: never).
+    pub const STOP_SPEED: &str = "core:stop_speed";
     /// Share of damage taken off, after armor and the `DAMAGE` chain (0..1; resistance 0.2 a
     /// level). What pierces invulnerability gets through.
     pub const DAMAGE_RESISTANCE: &str = "core:damage_resistance";

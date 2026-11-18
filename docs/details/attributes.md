@@ -25,6 +25,7 @@ Reach and mining speed are attributes too (`attribute::BLOCK_REACH`, `ENTITY_REA
 | `AIR_CONTROL` | how well it steers in the air |
 | `SLIPPERINESS` | skates on any ground |
 | `CLIMB_SPEED` | ladders |
+| `STOP_SPEED` | below it (blocks a tick, each way on its own) a speed stops as a tick starts; 0 |
 | `CAN_FLY` | 1 or more flies, 1 in creative: a ring of flight is a modifier |
 | `CAN_SPRINT` | |
 
