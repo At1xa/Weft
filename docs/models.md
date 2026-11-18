@@ -82,7 +82,7 @@ A role tells the engine what a bone is: which stock clips move it, what armor co
 | `leftLeg`, `rightLeg` (also `leg0`, `leg1`) | swing while walking |
 | `leg2`, `leg3` | the front legs of a four-legged animal, opposite to the back ones |
 | `leg0` .. `leg7` in a model with more than four legs | a spider's legs, sweeping sideways (left and right twins `leg0`/`leg1`, `leg2`/`leg3` ...) |
-| `mainItem`, `offItem` (also `leftItem`, `rightItem`) | an empty bone: a held item goes here instead of at the end of the arm |
+| `mainItem`, `offItem` (also `leftItem`, `rightItem`) | an empty bone: a held item goes here instead of at the end of the arm. A model with arms and without these gets `leftItem` and `rightItem` at the palms, so a clip can turn the item in the hand on any model |
 | `eyes` | an empty bone: where the camera is, for a model whose head isn't at the usual height |
 | `hanging`, `hanging_<anything>` | hangs and swings by itself, see "Bones that move by themselves" |
 | a bone under `head` | stays with the head, and is gone with it from your own eyes |

@@ -679,14 +679,38 @@ fn bind_kind(
     (anims, actions, by_item)
 }
 
+/// Models without item bones get them, so clips can turn what is held apart from the arm,
+/// players' own avatars too: an empty `leftItem` (the main hand's) and `rightItem` hanging from
+/// each arm at the palm, which unmoved hold the item where the arm itself would.
+fn add_item_bones(parts: &mut Vec<Part>) {
+    use super::entity_render::PALM_PIXELS;
+    for (off, arm, name) in [(false, role::ARM_RIGHT, "leftItem"), (true, role::ARM_LEFT, "rightItem")] {
+        if model::item_bone(parts, off).is_some() {
+            continue;
+        }
+        let Some(i) = parts.iter().position(|p| p.role == arm) else { continue };
+        let [x, y, z] = parts[i].pivot;
+        parts.push(Part {
+            name: name.into(),
+            parent: Some(i as u32),
+            pivot: [x, y - PALM_PIXELS, z],
+            role: role::STATIC,
+            cuboids: Vec::new(),
+            rest: [0.0; 3],
+            mesh: Vec::new(),
+        });
+    }
+}
+
 /// Adds a model to the tables and the list of kinds; its place there.
 fn push_kind(
     kinds: &mut Vec<KindModel>,
     tables: &mut (Vec<GpuCuboid>, Vec<GpuCorner>),
-    parts: Vec<Part>,
+    mut parts: Vec<Part>,
     texture: Option<[u32; 2]>,
     clips: (&[Arc<Animation>], &[Arc<Animation>], &[(u32, Vec<Arc<Animation>>)]),
 ) -> u32 {
+    add_item_bones(&mut parts);
     let worn_on = model::worn_targets(&parts);
     let (c0, v0) = (tables.0.len() as u32, tables.1.len() as u32);
     add_geometry(&parts, &worn_on, &mut tables.0, &mut tables.1);

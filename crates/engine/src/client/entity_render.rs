@@ -2280,7 +2280,7 @@ fn hold_of(c: &crate::content::Content, m: &super::models::KindModel, item: u32)
 }
 
 /// From the shoulder to the palm, along the arm.
-const PALM_PIXELS: f32 = 10.0;
+pub(super) const PALM_PIXELS: f32 = 10.0;
 
 /// Where a model of bones held in the hand has its origin: on the palm, its front (-Z) along the
 /// arm, so an arm held out points it ahead with its top (+Y) up.
