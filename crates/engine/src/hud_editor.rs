@@ -1,26 +1,33 @@
 //! Screens that arrange the overlay: the HUD editor, where the elements (`hud::Hud`) are dragged
 //! around the live picture, and the debug options (F3+F6), which say when each F3 line shows.
 
-use glam::Vec2;
 use std::rc::Rc;
+
+use glam::Vec2;
 
 use crate::app::{Ctx, Request};
 use crate::hud::{self, Edit, Hud};
 use crate::screens::{BuildCx, Screen, back_button, button, frame, label};
 use crate::ui::text::Arg;
-use crate::ui::{Justify, Kind, NodeId, Style, Ui};
+use crate::ui::{Justify, Kind, NodeId, Rect, Style, Ui};
 
 /// Grid step in GUI pixels, and how near the middle of the window an element snaps to it.
 pub(crate) const GRID: f32 = 8.0;
 const SNAP: f32 = 3.0;
+/// The side of the buttons on an element's corners.
+const CORNER: f32 = 10.0;
 
 enum Pending {
-    ToggleHidden,
+    ToggleHidden(String),
     Reset,
 }
 
 #[derive(Default)]
 pub struct HudEditor {
+    /// The element under the cursor as its corner buttons were last built: where it is, and hidden.
+    mark: Option<(String, Rect, bool)>,
+    /// An element just shown, green until the cursor leaves it.
+    showing: Option<String>,
     selected: Option<String>,
     grid: bool,
     confirm_reset: bool,
@@ -108,12 +115,39 @@ impl Screen for HudEditor {
     }
 
     fn pointer(&mut self, cursor: Vec2, ui: &mut Ui, ctx: &mut Ctx, hud: &mut Hud) -> bool {
-        hud.set_edit(Some(Edit { selected: self.selected.clone(), grid: self.grid }));
-        match (self.pending.take(), self.selected.as_deref()) {
-            (Some(Pending::ToggleHidden), Some(name)) => hud.toggle_hidden(name),
-            (Some(Pending::Reset), Some(name)) => hud.reset(name),
+        match (self.pending.take(), self.selected.clone()) {
+            (Some(Pending::ToggleHidden(name)), _) => {
+                hud.toggle_hidden(&name);
+                self.showing = (!hud.hidden(&name)).then_some(name);
+            }
+            (Some(Pending::Reset), Some(name)) => hud.reset(&name),
             _ => {}
         }
+        // The corner buttons are on the element dragged or under the cursor, and stay while it is
+        // on them or on the room they take past the element's own rect, whatever lies there.
+        let on_button = ui.hit(cursor).is_some();
+        let kept = self
+            .mark
+            .as_ref()
+            .filter(|m| on_button || reach(m.1).contains(cursor) && !m.1.contains(cursor))
+            .map(|m| m.0.clone());
+        let over = self
+            .drag
+            .as_ref()
+            .map(|d| d.0.clone())
+            .or(kept)
+            .or_else(|| hud.element_at(cursor));
+        let mark = over.and_then(|n| hud.element_rect(&n).map(|r| (n.clone(), r, hud.hidden(&n))));
+        if mark != self.mark {
+            self.mark = mark;
+            ctx.requests.push(Request::Rebuild);
+        }
+        // One just shown stays green until the cursor leaves it.
+        if self.mark.as_ref().map(|m| &m.0) != self.showing.as_ref() {
+            self.showing = None;
+        }
+        let showing = self.showing.clone();
+        hud.set_edit(Some(Edit { selected: self.selected.clone(), showing, grid: self.grid }));
         if self.confirm_reset {
             return false;
         }
@@ -162,6 +196,9 @@ impl Screen for HudEditor {
             }
             return false;
         }
+        if on_button {
+            return false;
+        }
         // A touch control's top right corner sizes it (`hud::HANDLE` shows where).
         let corner = |n: &str| hud.element_rect(n).map(|r| Vec2::new(r.x + r.w, r.y));
         if left
@@ -177,13 +214,14 @@ impl Screen for HudEditor {
         }
         if left || right {
             let found = hud.element_at(cursor);
-            if found != self.selected {
+            if left && found != self.selected {
                 self.selected = found.clone();
                 ctx.requests.push(Request::Rebuild);
             }
             if let Some(name) = found {
                 if right {
                     hud.toggle_hidden(&name);
+                    self.showing = (!hud.hidden(&name)).then_some(name);
                 } else if let Some(r) = hud.element_rect(&name) {
                     self.drag = Some((name, cursor - Vec2::new(r.x, r.y)));
                 }
@@ -250,20 +288,23 @@ impl Screen for HudEditor {
                 });
             });
             if self.selected.is_some() {
-                ui.container(Style::row().gap(4.0).justify(Justify::Center), |ui| {
-                    let act = |ui: &mut Ui, key: &str, what: fn() -> Pending| {
-                        button(ui, cx, key, &[], (width - 16.0) / 2.0, move |c| {
-                            if let Some(s) = c.screen::<HudEditor>() {
-                                s.pending = Some(what());
-                            }
-                        });
-                    };
-                    act(ui, "hud.edit.hide", || Pending::ToggleHidden);
-                    act(ui, "hud.edit.reset", || Pending::Reset);
+                let b = button(ui, cx, "hud.edit.reset", &[], 158.0, |c| {
+                    if let Some(s) = c.screen::<HudEditor>() {
+                        s.pending = Some(Pending::Reset);
+                    }
                 });
+                ui.nodes[b].style.self_align = Some(crate::ui::Align::Center);
             }
         });
         ui.set_id(tools, "hud_tools");
+        if !self.confirm_reset {
+        // In the top right corner of the element under the cursor: hiding or showing it.
+        if let Some((name, r, hidden)) = &self.mark {
+            let r = reach(*r);
+            let (icon, tip) = if *hidden { ("core:gui/icon_verified", "hud.edit.show") } else { ("core:gui/close", "hud.edit.hide") };
+            corner(ui, cx, [r.x + r.w, r.y, 1.0, 0.0], icon, tip, name, Pending::ToggleHidden);
+        }
+        }
         if self.confirm_reset {
             let modal = ui.panel(
                 "overlay",
@@ -328,6 +369,30 @@ fn split_control(ui: &mut Ui, cx: &BuildCx, width: f32, key: &str, on: bool, scr
         ui.nodes[configure].tooltip = Some(cx.t("hud.edit.configure", &[Arg::Key(key.into())]));
         ui.set_id(configure, screen);
     });
+}
+
+/// Where an element's corner buttons go: its own rect, out to its sides when it is narrower than
+/// three buttons (a button apart), and at least a button high.
+fn reach(r: Rect) -> Rect {
+    let out = (3.0 * CORNER - r.w).max(0.0) / 2.0;
+    Rect { x: r.x - out, w: r.w + 2.0 * out, h: r.h.max(CORNER), ..r }
+}
+
+/// A small icon button at `at` (`Style::at`) that leaves `what` to do to element `name` for the
+/// editor.
+fn corner(ui: &mut Ui, cx: &BuildCx, at: [f32; 4], icon: &str, tip: &str, name: &str, what: fn(String) -> Pending) {
+    let mut style = Style::default().size(CORNER, CORNER).pad(1.0).center();
+    style.at = Some(at);
+    let name = name.to_string();
+    let act = Rc::new(move |c: &mut Ctx| {
+        if let Some(s) = c.screen::<HudEditor>() {
+            s.pending = Some(what(name.clone()));
+        }
+    });
+    let b = ui.button("button", style, act, |ui| {
+        ui.add(Kind::Image { texture: icon.into(), color: 0xFFFFFFFF }, Style::default().size(CORNER - 2.0, CORNER - 2.0));
+    });
+    ui.nodes[b].tooltip = Some(cx.t(tip, &[]));
 }
 
 /// When each line of the F3 overlay shows: with F3, always, or never. A line set to always stays
