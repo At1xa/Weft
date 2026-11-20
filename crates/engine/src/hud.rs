@@ -537,6 +537,8 @@ impl Hud {
                 let p = self.layout.get(&name).cloned().unwrap_or_default();
                 let at = match part {
                     Part::Place(i) if p.flow.is_none() => p.at.or(places()[i].at),
+                    // Its top middle 12 pixels under the window's, out of the flow.
+                    Part::PlayerList if p.flow.is_none() => p.at.or(Some([0.5, 0.0, 0.0, 12.0])),
                     _ => p.at,
                 };
                 let (anchor, order) = p.flow.unwrap_or((anchor, order));
@@ -630,9 +632,7 @@ impl Hud {
                 });
             }
             Part::PlayerList if list_shown || editing => {
-                let mut style = Style::default().pad(4.0).gap(1.0);
-                style.at = Some([0.0, 12.0 - ui.size.y / 2.0, 0.5, 0.0]);
-                ui.panel("panel", style, |ui| {
+                ui.panel("panel", Style::default().pad(4.0).gap(1.0), |ui| {
                     for name in client.into_iter().flat_map(|cl| &cl.players) {
                         ui.text(text::rich(&text::escape(name), lang, None), "label");
                     }
