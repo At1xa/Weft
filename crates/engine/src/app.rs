@@ -2568,7 +2568,7 @@ fn end_input(r: &mut Running) {
 
 fn refresh_hud(r: &mut Running) {
     let top = r.screens.last().map(|(s, _)| s.as_ref());
-    if !top.is_some_and(|s| s.name() == "core:hud_editor") {
+    if !top.is_some_and(|s| matches!(s.name(), "core:hud_editor" | "core:hud_element")) {
         r.hud.set_edit(None);
     }
     if r.game.is_some() || r.hud.editing() {

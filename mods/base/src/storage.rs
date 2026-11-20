@@ -14,7 +14,7 @@ pub fn register(r: &mut Registry) {
     r.tag("storage", &["chest"]);
     // Small, in the corner of every menu's panel; what they do in their tooltips.
     r.screen_part(&screens::MENUS, "corner", 0, |ui| {
-        ui.icon_button("base:gui/icon_sort", 8.0, 8.0, S::default().tooltip("storage.base.sort"), |c| {
+        ui.icon_button("core:gui/icon_sort", 8.0, 8.0, S::default().tooltip("storage.base.sort"), |c| {
             c.client().menu_sort(None);
         });
         ui.icon_button("base:gui/icon_put_away", 8.0, 8.0, S::default().tooltip("storage.base.deposit"), |c| {

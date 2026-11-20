@@ -7,7 +7,7 @@ use glam::Vec2;
 
 use crate::app::{Ctx, Request};
 use crate::hud::{self, Edit, Hud};
-use crate::screens::{BuildCx, Screen, back_button, button, frame, label};
+use crate::screens::{BuildCx, Screen, back_button, button, frame, frame_titled, label};
 use crate::ui::text::Arg;
 use crate::ui::{Justify, Kind, NodeId, Rect, Style, Ui};
 
@@ -19,6 +19,7 @@ const CORNER: f32 = 10.0;
 
 enum Pending {
     ToggleHidden(String),
+    Options(String),
     Reset,
 }
 
@@ -119,6 +120,12 @@ impl Screen for HudEditor {
             (Some(Pending::ToggleHidden(name)), _) => {
                 hud.toggle_hidden(&name);
                 self.showing = (!hud.hidden(&name)).then_some(name);
+            }
+            (Some(Pending::Options(name)), _) => {
+                let applied = hud.scale(&name).unwrap_or(0);
+                let (scale, gui) = (Rc::new(std::cell::Cell::new(applied)), (hud.gui_scale(), hud.max_scale()));
+                ctx.requests
+                    .push(Request::Open(Box::new(ElementOptions { name, scale, applied, gui })));
             }
             (Some(Pending::Reset), Some(name)) => hud.reset(&name),
             _ => {}
@@ -301,6 +308,7 @@ impl Screen for HudEditor {
         // In the top right corner of the element under the cursor: hiding or showing it.
         if let Some((name, r, hidden)) = &self.mark {
             let r = reach(*r);
+            corner(ui, cx, [r.x, r.y, 0.0, 0.0], "core:gui/icon_sort", "hud.edit.options", name, Pending::Options);
             let (icon, tip) = if *hidden { ("core:gui/icon_verified", "hud.edit.show") } else { ("core:gui/close", "hud.edit.hide") };
             corner(ui, cx, [r.x + r.w, r.y, 1.0, 0.0], icon, tip, name, Pending::ToggleHidden);
         }
@@ -393,6 +401,60 @@ fn corner(ui: &mut Ui, cx: &BuildCx, at: [f32; 4], icon: &str, tip: &str, name: 
         ui.add(Kind::Image { texture: icon.into(), color: 0xFFFFFFFF }, Style::default().size(CORNER - 2.0, CORNER - 2.0));
     });
     ui.nodes[b].tooltip = Some(cx.t(tip, &[]));
+}
+
+/// One element's own settings, from the editor's corner button: its scale, the GUI's
+/// (`core:gui_scale`) unless set.
+pub struct ElementOptions {
+    name: String,
+    /// Its scale on the slider, 0 for the GUI's, and the one the HUD has.
+    scale: Rc<std::cell::Cell<u32>>,
+    applied: u32,
+    /// The GUI's scale when it opened, and the largest the window takes (`Hud::max_scale`).
+    gui: (u32, u32),
+}
+
+impl Screen for ElementOptions {
+    fn name(&self) -> &str {
+        "core:hud_element"
+    }
+
+    fn pauses(&self) -> bool {
+        true
+    }
+
+    fn pointer(&mut self, _: Vec2, _: &mut Ui, _: &mut Ctx, hud: &mut Hud) -> bool {
+        let scale = self.scale.get();
+        if scale != self.applied {
+            hud.set_scale(&self.name, (scale > 0).then_some(scale));
+            self.applied = scale;
+        }
+        false
+    }
+
+    fn build(&mut self, ui: &mut Ui, cx: &BuildCx) {
+        // Titled by what the element is called, a mod's own too (`hud::element_title`).
+        frame_titled(ui, cx, hud::element_title(cx.lang, &self.name), |ui| {
+            // As the GUI scale's slider: Default at its left end, then 1 up to the largest.
+            ui.panel("panel", Style::default().pad(8.0).gap(2.0).w(240.0), |ui| {
+                let (shown, gui) = (self.scale.clone(), self.gui.0 as i64);
+                ui.text_bound(
+                    "default",
+                    Box::new(move |_: &Ctx| match shown.get() {
+                        0 => ("hud.edit.scale_default".into(), vec![Arg::Int(gui)]),
+                        s => ("hud.edit.scale".into(), vec![Arg::Int(s as i64)]),
+                    }),
+                );
+                let (set, max) = (self.scale.clone(), self.gui.1.max(1));
+                let at = self.scale.get().min(max) as f32 / max as f32;
+                let thumb = crate::ui::slider::Thumb::new(at, move |_, f| set.set((f * max as f32).round() as u32));
+                let mut slider = crate::ui::slider::Slider::new(vec![thumb]);
+                slider.steps = max;
+                ui.add(Kind::Slider(slider), Style::default().h(20.0).stretch());
+            });
+            back_button(ui, cx, "menu.done", &[], 200.0, |c| c.requests.push(Request::Close));
+        });
+    }
 }
 
 /// When each line of the F3 overlay shows: with F3, always, or never. A line set to always stays

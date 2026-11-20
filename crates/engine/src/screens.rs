@@ -405,7 +405,11 @@ pub fn face_texture(cx: &BuildCx) -> String {
 
 /// A screen's title: large, on one line.
 pub fn title(ui: &mut Ui, cx: &BuildCx, key: &str) {
-    let t = label(ui, cx, key, &[], "title");
+    title_text(ui, cx.t(key, &[]));
+}
+
+fn title_text(ui: &mut Ui, spans: Vec<Span>) {
+    let t = ui.text(spans, "title");
     if let Some(t) = ui.text_mut(t) {
         t.scale = 2.0;
         t.wrap = false;
@@ -414,10 +418,15 @@ pub fn title(ui: &mut Ui, cx: &BuildCx, key: &str) {
 
 /// Full-screen dimmed column with a title, used by most menus.
 pub fn frame(ui: &mut Ui, cx: &BuildCx, key: &str, f: impl FnOnce(&mut Ui)) {
+    frame_titled(ui, cx, cx.t(key, &[]), f);
+}
+
+/// `frame` with a title of its own, not a lang key's: what a HUD element is called.
+pub fn frame_titled(ui: &mut Ui, cx: &BuildCx, title: Vec<Span>, f: impl FnOnce(&mut Ui)) {
     let bg = if cx.in_game { "overlay" } else { "background" };
     ui.root_style(Style::default().stretch());
     ui.panel(bg, Style::default().grow().center().pad(12.0).gap(10.0), |ui| {
-        title(ui, cx, key);
+        title_text(ui, title);
         f(ui);
     });
 }
