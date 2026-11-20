@@ -1266,7 +1266,8 @@ pub fn draw_custom(
     drag: Option<&DragPreview>,
 ) {
     match tag {
-        TAG_CROSSHAIR => loaded(ren, look, "crosshair", r, scale),
+        // Snap the crosshair to whole GUI pixels.
+        TAG_CROSSHAIR => loaded(ren, look, "crosshair", Rect { x: r.x.floor(), y: r.y.floor(), ..r }, scale),
         TAG_EDIT_GRID => {
             let step = crate::hud_editor::GRID * scale;
             let line = |i: u32| if i % 4 == 0 { 0xB4D4FF16 } else { 0xB4D4FF09 };
