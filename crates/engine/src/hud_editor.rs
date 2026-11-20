@@ -404,7 +404,7 @@ fn corner(ui: &mut Ui, cx: &BuildCx, at: [f32; 4], icon: &str, tip: &str, name: 
 }
 
 /// One element's own settings, from the editor's corner button: its scale, the GUI's
-/// (`core:gui_scale`) unless set.
+/// (`core:gui_scale`) unless set, then what its mod adds to its place `options`.
 pub struct ElementOptions {
     name: String,
     /// Its scale on the slider, 0 for the GUI's, and the one the HUD has.
@@ -451,6 +451,7 @@ impl Screen for ElementOptions {
                 let mut slider = crate::ui::slider::Slider::new(vec![thumb]);
                 slider.steps = max;
                 ui.add(Kind::Slider(slider), Style::default().h(20.0).stretch());
+                crate::screens::parts(ui, cx, &self.name, "options");
             });
             back_button(ui, cx, "menu.done", &[], 200.0, |c| c.requests.push(Request::Close));
         });
