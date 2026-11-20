@@ -646,8 +646,13 @@ fn make_depth(gpu: &mut dyn Backend, w: u32, h: u32) -> (TextureId, u32, u32) {
 }
 
 impl Running {
+    /// The largest GUI scale the window takes; what Auto uses and where every scale slider ends.
+    fn max_gui_scale(&self) -> u32 {
+        crate::settings::max_gui_scale(self.gpu.surface_size())
+    }
+
     fn gui_scale(&self) -> f32 {
-        let max = crate::settings::max_gui_scale(self.gpu.surface_size());
+        let max = self.max_gui_scale();
         let s = if crate::settings::gui_scale() == 0 { max } else { crate::settings::gui_scale().min(max) };
         s as f32
     }
@@ -667,6 +672,7 @@ impl Running {
                 let (w, h) = self.gpu.surface_size();
                 glam::Vec2::new(w as f32, h as f32) / self.gui_scale()
             },
+            max_gui_scale: self.max_gui_scale(),
             look: &self.look,
             assets: &self.assets,
             renderer: self.renderer,

@@ -25,6 +25,8 @@ pub struct BuildCx<'a> {
     pub client: Option<&'a crate::client::Client>,
     /// The window in GUI pixels.
     pub size: glam::Vec2,
+    /// The largest GUI scale the window takes, where the GUI scale's slider ends.
+    pub max_gui_scale: u32,
     pub look: &'a crate::ui::look::Look,
     pub assets: &'a crate::assets::Assets,
     /// The renderer drawing now (`core:renderer` may have chosen another for the next start).
@@ -633,6 +635,9 @@ fn config_row(ui: &mut Ui, cx: &BuildCx, id: u32, d: &crate::config::ConfigDef, 
     use weft_abi::config_kind as ck;
     let key = text::lang_key("config", &d.name);
     let locked = (d.synced() && cx.remote) || rules_locked;
+    // The GUI scale goes only as far as the window takes; past that it is drawn at the largest.
+    let window = (d.name == "core:gui_scale").then(|| crate::config::ConfigDef { max: cx.max_gui_scale as f64, ..d.clone() });
+    let d = window.as_ref().unwrap_or(d);
     // A value's own name where it has one (a choice, gui scale 0), else the
     // number through `.value`; looked up now, the bindings run without the language.
     let small = d.kind != ck::FLOAT && d.max - d.min <= 64.0;
