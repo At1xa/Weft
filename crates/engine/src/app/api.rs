@@ -685,7 +685,11 @@ pub unsafe extern "C" fn client_ui_rect(c: *mut abi::ClientCtx, query: Str, out:
         let bar = (q == "scrollbar")
             .then(|| ui.nodes.iter().find_map(|n| n.scrollbar.map(|b| b.track)))
             .flatten();
-        let Some(rect) = bar.or_else(|| found.map(|i| ui.nodes[i].rect)) else { return 0 };
+        // An element with a scale of its own is in another tree (`Hud::element_rect`).
+        let element = q
+            .strip_prefix("id:hud:")
+            .and_then(|n| r.hud.element_rect(n));
+        let Some(rect) = element.or(bar).or_else(|| found.map(|i| ui.nodes[i].rect)) else { return 0 };
         let scale = r.gui_scale();
         let (w, h) = r.gpu.surface_size();
         let (w, h) = (w as f32 / scale, h as f32 / scale);

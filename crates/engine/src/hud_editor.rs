@@ -37,9 +37,11 @@ pub struct HudEditor {
 impl HudEditor {
     /// Where element `name` goes for its corner at `corner`: tied to the nearest of the window's
     /// nine points, so it keeps its place when the window changes size.
+    /// An element of its own scale is placed in its GUI pixels.
     fn place(&self, hud: &mut Hud, name: &str, corner: Vec2, size: Vec2) {
-        let (w, h) = (size.x, size.y);
-        let window = hud.ui.size;
+        let zoom = hud.zoom(name);
+        let (corner, w, h) = (corner / zoom, size.x / zoom, size.y / zoom);
+        let window = hud.ui.size / zoom;
         let third = |c: f32, all: f32| {
             if c < all / 3.0 {
                 0.0
@@ -68,7 +70,7 @@ impl HudEditor {
             .is_some_and(|t| ui.nodes[t].rect.contains(cursor))
     }
 
-    pub(crate) fn element_tooltip(&self, cursor: Vec2, ui: &Ui, hud: &Hud) -> Option<NodeId> {
+    pub(crate) fn element_tooltip<'a>(&self, cursor: Vec2, ui: &Ui, hud: &'a Hud) -> Option<(&'a Ui, NodeId)> {
         if self.confirm_reset || self.drag.is_some() || self.sizing.is_some() || self.tools_drag.is_some() || Self::over_tools(ui, cursor) {
             return None;
         }

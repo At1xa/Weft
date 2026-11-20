@@ -1851,6 +1851,7 @@ impl Running {
         };
         let mut uis: Vec<&mut Ui> = self.screens.iter_mut().map(|(_, u)| u).collect();
         uis.push(&mut self.hud.ui);
+        uis.extend(self.hud.scaled.iter_mut().map(|s| &mut s.1));
         for ui in uis {
             let mut relayout = false;
             let mut redraw = false;
@@ -2573,8 +2574,9 @@ fn refresh_hud(r: &mut Running) {
     if r.game.is_some() || r.hud.editing() {
         let chat_open = top.is_some_and(Screen::shows_chat);
         r.hud.knob = r.touches.knob();
+        let scales = [r.gui_scale() as u32, r.max_gui_scale()];
         if r.hud
-            .update(r.game.as_ref().map(|g| &g.client), r.debug, crate::settings::debug_groups(), chat_open, &r.lang, &r.input)
+            .update(r.game.as_ref().map(|g| &g.client), r.debug, crate::settings::debug_groups(), chat_open, &r.lang, &r.input, scales)
         {
             r.quads_dirty = true;
         }
@@ -2612,17 +2614,27 @@ fn layout_uis(r: &mut Running, scale: f32) -> f32 {
     let gui_size = Vec2::new(surface.0 as f32, surface.1 as f32) / scale;
     // Whole physical pixels per pixel of the font's design.
     let p = r.ui.font.pixel;
-    let text_unit = (scale * 0.5 * p).round().max(1.0) / (scale * p);
+    let unit = |scale: f32| (scale * 0.5 * p).round().max(1.0) / (scale * p);
+    let text_unit = unit(scale);
     // A phone's keyboard covers the bottom of the window: screens are laid out above it, so the
     // chat line stays in sight while it is typed in. The HUD keeps the whole window.
     let screen_size = Vec2::new(gui_size.x, visible_height(r).map_or(gui_size.y, |h| (h / scale).min(gui_size.y)));
     {
-        let mut uis: Vec<(&mut Ui, Vec2)> = Vec::new();
+        let mut uis: Vec<(&mut Ui, Vec2, f32)> = Vec::new();
         if r.game.is_some() || r.hud.editing() {
-            uis.push((&mut r.hud.ui, gui_size));
+            uis.push((&mut r.hud.ui, gui_size, text_unit));
+            // An element with a scale of its own is in a tree of that scale: laid out over the
+            // whole window in that scale's pixels, with text sized for it.
+            for (s, ui) in &mut r.hud.scaled {
+                uis.push((ui, gui_size * scale / *s as f32, unit(*s as f32)));
+            }
         }
-        uis.extend(r.screens.iter_mut().map(|(_, u)| (u, screen_size)));
-        for (ui, size) in uis {
+        uis.extend(
+            r.screens
+                .iter_mut()
+                .map(|(_, u)| (u, screen_size, text_unit)),
+        );
+        for (ui, size, text_unit) in uis {
             if ui.dirty || ui.size != size || ui.text_unit != text_unit {
                 ui.text_unit = text_unit;
                 ui.layout(size, &r.ui.font);
@@ -2655,7 +2667,7 @@ fn build_ui_quads(r: &mut Running, scale: f32, drag: Option<&DragPreview>) {
     let client = r.game.as_ref().map(|g| &g.client);
     let mut previews = Vec::new();
     let preview_tex = r.preview_tex;
-    let mut layers: Vec<&Ui> = Vec::new();
+    let mut layers: Vec<(&Ui, f32)> = Vec::new();
     let mut animated = Vec::new();
     let mut hud_quads = 0..0;
     let hud = r
@@ -2664,16 +2676,19 @@ fn build_ui_quads(r: &mut Running, scale: f32, drag: Option<&DragPreview>) {
         .is_some_and(|g| g.client.camera_has(crate::tag_bits::camera::HUD))
         || !r.screens.is_empty();
     let with_hud = r.hud.editing() || (r.game.is_some() && hud && !hud_hidden() && !(r.hud_off && r.screens.is_empty()));
+    // Each tree with the scale it is drawn at: the HUD's first, each of its scaled trees at its own.
     if with_hud {
-        layers.push(&r.hud.ui);
+        layers.push((&r.hud.ui, scale));
+        layers.extend(r.hud.scaled.iter().map(|(s, ui)| (ui, *s as f32)));
     }
+    let hud_layers = layers.len();
     let first = r
         .screens
         .iter()
         .rposition(|(s, _)| !s.overlays())
         .unwrap_or(0);
-    layers.extend(r.screens[first..].iter().map(|(_, ui)| ui));
-    for ui in layers {
+    layers.extend(r.screens[first..].iter().map(|(_, ui)| (ui, scale)));
+    for (i, (ui, scale)) in layers.into_iter().enumerate() {
         let look = &r.look;
         let textures = &r.textures;
         let mut custom = |ren: &mut UiRenderer, tag: u32, data: u64, rect: crate::ui::Rect, hovered: bool, icon: Option<u32>| {
@@ -2700,8 +2715,9 @@ fn build_ui_quads(r: &mut Running, scale: f32, drag: Option<&DragPreview>) {
         };
         let base = all.len();
         r.ui.build(&mut *r.gpu, &r.assets, ui, &r.look, scale, game, &mut custom);
-        if with_hud && std::ptr::eq(ui, &r.hud.ui) {
-            hud_quads = base..base + r.ui.quads.len();
+        // The HUD's trees come first, so its quads run from the start to the end of its last tree.
+        if i < hud_layers {
+            hud_quads = 0..base + r.ui.quads.len();
         }
         all.append(&mut r.ui.quads);
         animated.extend(r.ui.animated.drain(..).map(|mut a| {
@@ -2785,7 +2801,7 @@ fn draw_overlays(r: &mut Running, info: &weft_render::FrameInfo, scale: f32, tex
         let cursor = r.input.cursor / scale;
         let (source, hovered) = match (screen.as_ref() as &dyn std::any::Any).downcast_ref::<crate::hud_editor::HudEditor>() {
             Some(editor) => match editor.element_tooltip(cursor, ui, &r.hud) {
-                Some(node) => (&r.hud.ui, Some(node)),
+                Some((source, node)) => (source, Some(node)),
                 None => (ui, ui.hit(cursor)),
             },
             None => (ui, ui.hovered),

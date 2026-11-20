@@ -115,20 +115,28 @@ pub struct Placement {
     /// `[ax, ay, x, y]`: this point of the element (fractions of its size) lies at the same point
     /// of the window, moved by (x, y) GUI pixels.
     at: Option<[f32; 4]>,
+    /// Its own GUI scale, the GUI's unless set.
+    scale: Option<u32>,
     hidden: bool,
 }
 
 impl Placement {
-    /// `base:food = top_right 2`, `core:hotbar = at 0.5 1 0 -4`, either or neither followed by
-    /// `hidden`.
+    /// Optional placement, followed by an optional `scale` and its value, then optional `hidden`.
     fn parse(value: &str) -> Placement {
-        let mut words: Vec<&str> = value.split_whitespace().collect();
-        let hidden = words.last() == Some(&"hidden");
-        if hidden {
-            words.pop();
-        }
+        let tokens: Vec<&str> = value.split_whitespace().collect();
+        let mut words = tokens.as_slice();
+        let hidden = if let [rest @ .., "hidden"] = words {
+            words = rest;
+            true
+        } else {
+            false
+        };
         let mut p = Placement { hidden, ..Default::default() };
-        match words.as_slice() {
+        if let [rest @ .., "scale", s] = words {
+            p.scale = s.parse().ok().filter(|s| *s > 0);
+            words = rest;
+        }
+        match words {
             ["at", rest @ ..] => {
                 let n: Vec<f32> = rest.iter().filter_map(|v| v.parse().ok()).collect();
                 if let [ax, ay, x, y] = n[..] {
@@ -142,12 +150,18 @@ impl Placement {
     }
 
     fn value(&self) -> String {
-        let place = match (&self.at, &self.flow) {
+        let mut v = match (&self.at, &self.flow) {
             (Some([ax, ay, x, y]), _) => format!("at {ax} {ay} {x} {y}"),
             (None, Some((anchor, order))) => format!("{anchor} {order}"),
             (None, None) => String::new(),
         };
-        if self.hidden { format!("{place} hidden").trim().to_string() } else { place }
+        if let Some(s) = self.scale {
+            v += &format!(" scale {s}");
+        }
+        if self.hidden {
+            v += " hidden";
+        }
+        v.trim().to_string()
     }
 }
 
@@ -252,12 +266,21 @@ struct Placed {
     order: i32,
     part: Part,
     at: Option<[f32; 4]>,
+    /// Its own GUI scale where that isn't the GUI's.
+    scale: Option<u32>,
     hidden: bool,
 }
 
 #[derive(Default)]
 pub struct Hud {
     pub ui: Ui,
+    /// The elements with a scale of their own, a tree for each scale (`ui` has the rest).
+    pub scaled: Vec<(u32, Ui)>,
+    /// The GUI scale `ui` is drawn at, and the largest the window takes.
+    gui: u32,
+    max: u32,
+    /// Where scales mix, each element in a flow and its size (GUI pixels) the trees left room for.
+    flowing: Vec<(String, [f32; 2])>,
     revisions: Vec<u64>,
     key: Option<(bool, usize, [u32; 3], bool, bool, u32, u8, (i32, i32), (u32, u32, u8, bool), u64, (bool, [i32; 2], u64))>,
     helm_held: u64,
@@ -316,12 +339,43 @@ impl Hud {
         }
     }
 
-    pub(crate) fn element_node(&self, name: &str) -> Option<crate::ui::NodeId> {
-        self.ui.find(&format!("hud:{name}"))
+    pub(crate) fn element_node(&self, name: &str) -> Option<(&Ui, crate::ui::NodeId)> {
+        let id = format!("hud:{name}");
+        std::iter::once(&self.ui)
+            .chain(self.scaled.iter().map(|(_, ui)| ui))
+            .find_map(|ui| ui.find(&id).map(|n| (ui, n)))
+    }
+
+    /// Where an element is in `ui`'s GUI pixels, and its scale over the GUI's.
+    fn found(&self, name: &str) -> Option<(Rect, f32)> {
+        let id = format!("hud:{name}");
+        let gui = self.gui.max(1);
+        std::iter::once((gui, &self.ui))
+            .chain(self.scaled.iter().map(|(s, ui)| (*s, ui)))
+            .find_map(|(s, ui)| {
+                ui.find(&id)
+                    .map(|n| (ui.nodes[n].rect, s as f32 / gui as f32))
+            })
     }
 
     pub fn element_rect(&self, name: &str) -> Option<Rect> {
-        self.element_node(name).map(|n| self.ui.nodes[n].rect)
+        self.found(name)
+            .map(|(r, z)| Rect { x: r.x * z, y: r.y * z, w: r.w * z, h: r.h * z })
+    }
+
+    /// An element's scale over the GUI's, 1 for one without its own.
+    pub fn zoom(&self, name: &str) -> f32 {
+        self.found(name).map_or(1.0, |f| f.1)
+    }
+
+    /// An element's size in the GUI's pixels, nothing for one not drawn.
+    fn size(&self, name: &str) -> [f32; 2] {
+        self.element_rect(name).map_or([0.0; 2], |r| [r.w, r.h])
+    }
+
+    /// The largest GUI scale the window takes.
+    pub fn max_scale(&self) -> u32 {
+        self.max.max(1)
     }
 
     /// The smallest element under a point, so one lying inside another can be reached.
@@ -365,7 +419,9 @@ impl Hud {
 
     /// Returns true if the tree was rebuilt.
     /// `chat_open`: the chat screen shows the messages itself.
-    /// `groups`: bit per `DEBUG_GROUPS` entry shown with the debug overlay.
+    /// `groups`: bit per `DEBUG_GROUPS` entry shown with the debug overlay. `gui`: the GUI scale,
+    /// and the largest the window takes.
+    #[allow(clippy::too_many_arguments)]
     pub fn update(
         &mut self,
         client: Option<&Client>,
@@ -374,7 +430,11 @@ impl Hud {
         chat_open: bool,
         lang: &Lang,
         input: &crate::input::Input,
+        [gui, max]: [u32; 2],
     ) -> bool {
+        if [gui, max] != [self.gui, self.max] {
+            (self.gui, self.max, self.key) = (gui, max, None);
+        }
         let huds = &content().game.huds;
         self.revisions.resize(huds.len(), 0);
         if client.is_some() {
@@ -455,6 +515,10 @@ impl Hud {
         );
         let pilot = client.and_then(Client::active_helm_pilot);
         let helm_held = pilot.map_or(0, |p| p.held);
+        // The room left for an element in the other trees keeps to its size.
+        if self.flowing.iter().any(|(n, s)| self.size(n) != *s) {
+            self.key = None;
+        }
         if self.key == Some(key) && self.helm_held == helm_held {
             return false;
         }
@@ -530,6 +594,7 @@ impl Hud {
                 .filter(|h| h.anchor != a::DEBUG_LEFT && h.anchor != a::DEBUG_RIGHT)
                 .map(|h| (h.name.clone(), h.anchor.clone(), h.order, Part::Mod(h.owner, h.cb))),
         );
+        let max = self.max_scale();
         let mut placed: Vec<Placed> = all
             .into_iter()
             .filter(|e| shown(e.3))
@@ -542,12 +607,21 @@ impl Hud {
                     _ => p.at,
                 };
                 let (anchor, order) = p.flow.unwrap_or((anchor, order));
-                Placed { name, anchor, order, part, at, hidden: p.hidden }
+                let scale = p.scale.map(|s| s.min(max)).filter(|&s| s != gui);
+                Placed { name, anchor, order, part, at, scale, hidden: p.hidden }
             })
             .filter(|e| editing || !e.hidden)
             .collect();
         placed.sort_by_key(|p| p.order);
         self.names = placed.iter().map(|p| p.name.clone()).collect();
+        let mut scales: Vec<u32> = placed.iter().filter_map(|p| p.scale).collect();
+        scales.sort_unstable();
+        scales.dedup();
+        let flowing: Vec<_> = placed
+            .iter()
+            .filter(|p| !scales.is_empty() && p.at.is_none())
+            .map(|p| (p.name.clone(), self.size(&p.name)))
+            .collect();
         let at = |anchor: &str, upwards: bool| -> Vec<&Placed> {
             let mut v: Vec<_> = placed
                 .iter()
@@ -736,93 +810,114 @@ impl Hud {
                 ui.unlink_if_empty(id);
             }
         };
-        let window = self.ui.size;
-        let ui = &mut self.ui;
-        ui.clear();
-        ui.root_style(Style::default().stretch());
-        if edit.as_ref().is_some_and(|e| e.grid) {
-            ui.add(
-                Kind::Custom { tag: TAG_EDIT_GRID, data: 0 },
-                Style::default()
-                    .size(window.x, window.y)
-                    .at(0.0, 0.0, [0.0, 0.0]),
-            );
-        }
-        // The elements of an anchor stacked in a column of `style`, from the bottom when `upwards`.
-        let stack = |ui: &mut Ui, anchors: &[&str], upwards: bool, style: Style, align: Align| {
-            ui.container(style.gap(1.0).align(align), |ui| {
-                for e in anchors.iter().flat_map(|a| at(a, upwards)) {
-                    emit(ui, e, Style::default(), align);
+        // The tree of the elements of one scale, `window` being the window in its GUI pixels.
+        let tree = |ui: &mut Ui, window: glam::Vec2, scale: Option<u32>| {
+            // What another tree draws leaves room for itself here, so a flow of mixed scales stacks.
+            let zoom = scale.unwrap_or(gui) as f32 / gui as f32;
+            let emit = |ui: &mut Ui, e: &Placed, style: Style, align: Align| {
+                if e.scale == scale {
+                    return emit(ui, e, style, align);
                 }
-            });
-        };
-        // Both halves start at zero height and split the rest evenly, so the crosshair sits at the
-        // exact screen center whatever they contain.
-        ui.container(Style::row().h(0.0).grow().pad(4.0).align(Align::Start), |ui| {
-            // Half the screen each, so wide text on one side never pushes the other off screen
-            // (the two may overlap on narrow screens, like vanilla's).
-            stack(ui, &[a::DEBUG_LEFT, a::TOP_LEFT], false, Style::default().w(0.0).grow(), Align::Start);
-            stack(ui, &[a::DEBUG_RIGHT, a::TOP_RIGHT], false, Style::default().w(0.0).grow(), Align::End);
-        });
-        stack(ui, &[a::TOP_CENTER], false, Style::default().at(window.x / 2.0, 4.0, [0.5, 0.0]), Align::Center);
-        for e in at(CENTER, false) {
-            emit(ui, e, Style::default().self_align(Align::Center), Align::Start);
-        }
-        // No height of its own, so what is under the crosshair doesn't move it off the center.
-        ui.container(
-            Style::default()
-                .h(0.0)
-                .gap(1.0)
-                .self_align(Align::Center)
-                .align(Align::Center),
-            |ui| {
-                ui.container(Style::default().h(3.0), |_| {});
-                stack(ui, &[a::UNDER_CROSSHAIR], false, Style::default(), Align::Center);
-            },
-        );
-        ui.container(
-            Style::default()
-                .h(0.0)
-                .grow()
-                .justify(Justify::End)
-                .align(Align::Stretch)
-                .pad(2.0)
-                .gap(1.0),
-            |ui| {
-                for e in at(CHAT, false) {
-                    emit(ui, e, Style::default().self_align(Align::Start), Align::Start);
+                let [w, h] = flowing
+                    .iter()
+                    .find(|f| f.0 == e.name)
+                    .map_or([0.0; 2], |f| f.1);
+                if w > 0.0 {
+                    ui.add(Kind::Container { class: None }, style.size(w / zoom, h / zoom));
                 }
-                ui.container(Style::row().align(Align::End), |ui| {
-                    stack(ui, &[a::BOTTOM_LEFT], true, Style::default().w(0.0), Align::Start);
-                    ui.container(Style::default().grow(), |_| {});
-                    ui.container(Style::default().gap(1.0).align(Align::Center), |ui| {
-                        for e in at(a::ABOVE_HOTBAR, true) {
-                            emit(ui, e, Style::default(), Align::Center);
-                        }
-                        ui.container(Style::row().w(182.0).gap(2.0).align(Align::End), |ui| {
-                            stack(ui, &[a::HOTBAR_LEFT], true, Style::default(), Align::Start);
-                            ui.container(Style::default().grow(), |_| {});
-                            stack(ui, &[a::HOTBAR_RIGHT], true, Style::default(), Align::End);
-                        });
-                        for e in at(a::HOTBAR, true) {
-                            emit(ui, e, Style::default(), Align::Center);
-                        }
-                    });
-                    ui.container(Style::default().grow(), |_| {});
-                    stack(ui, &[a::BOTTOM_RIGHT], true, Style::default().w(0.0), Align::End);
+            };
+            ui.clear();
+            ui.root_style(Style::default().stretch());
+            if scale.is_none() && edit.as_ref().is_some_and(|e| e.grid) {
+                ui.add(
+                    Kind::Custom { tag: TAG_EDIT_GRID, data: 0 },
+                    Style::default().size(window.x, window.y).at(0.0, 0.0, [0.0, 0.0]),
+                );
+            }
+            // The elements of an anchor stacked in a column of `style`, from the bottom when `upwards`.
+            let stack = |ui: &mut Ui, anchors: &[&str], upwards: bool, style: Style, align: Align| {
+                ui.container(style.gap(1.0).align(align), |ui| {
+                    for e in anchors.iter().flat_map(|a| at(a, upwards)) {
+                        emit(ui, e, Style::default(), align);
+                    }
                 });
-            },
-        );
-        for e in placed.iter().filter(|p| p.at.is_some()) {
-            let [ax, ay, x, y] = e.at.unwrap_or_default();
-            emit(ui, e, Style::default().at(ax * window.x + x, ay * window.y + y, [ax, ay]), Align::Start);
-        }
-        for (s, alpha) in up(None) {
-            let [ax, ay] = s.at.unwrap_or_default();
-            ui.container(Style::default().at(ax * window.x, ay * window.y, [ax, ay]), |ui| {
-                shown_text(ui, s, alpha, lang, Some(input));
+            };
+            // Both halves start at zero height and split the rest evenly, so the crosshair sits at the
+            // exact screen center whatever they contain.
+            ui.container(Style::row().h(0.0).grow().pad(4.0).align(Align::Start), |ui| {
+                // Half the screen each, so wide text on one side never pushes the other off screen
+                // (the two may overlap on narrow screens, like vanilla's).
+                stack(ui, &[a::DEBUG_LEFT, a::TOP_LEFT], false, Style::default().w(0.0).grow(), Align::Start);
+                stack(ui, &[a::DEBUG_RIGHT, a::TOP_RIGHT], false, Style::default().w(0.0).grow(), Align::End);
             });
+            stack(ui, &[a::TOP_CENTER], false, Style::default().at(window.x / 2.0, 4.0, [0.5, 0.0]), Align::Center);
+            for e in at(CENTER, false) {
+                emit(ui, e, Style::default().self_align(Align::Center), Align::Start);
+            }
+            // No height of its own, so what is under the crosshair doesn't move it off the center.
+            ui.container(
+                Style::default()
+                    .h(0.0)
+                    .gap(1.0)
+                    .self_align(Align::Center)
+                    .align(Align::Center),
+                |ui| {
+                    ui.container(Style::default().h(3.0), |_| {});
+                    stack(ui, &[a::UNDER_CROSSHAIR], false, Style::default(), Align::Center);
+                },
+            );
+            ui.container(
+                Style::default()
+                    .h(0.0)
+                    .grow()
+                    .justify(Justify::End)
+                    .align(Align::Stretch)
+                    .pad(2.0)
+                    .gap(1.0),
+                |ui| {
+                    for e in at(CHAT, false) {
+                        emit(ui, e, Style::default().self_align(Align::Start), Align::Start);
+                    }
+                    ui.container(Style::row().align(Align::End), |ui| {
+                        stack(ui, &[a::BOTTOM_LEFT], true, Style::default().w(0.0), Align::Start);
+                        ui.container(Style::default().grow(), |_| {});
+                        ui.container(Style::default().gap(1.0).align(Align::Center), |ui| {
+                            for e in at(a::ABOVE_HOTBAR, true) {
+                                emit(ui, e, Style::default(), Align::Center);
+                            }
+                            ui.container(Style::row().w(182.0).gap(2.0).align(Align::End), |ui| {
+                                stack(ui, &[a::HOTBAR_LEFT], true, Style::default(), Align::Start);
+                                ui.container(Style::default().grow(), |_| {});
+                                stack(ui, &[a::HOTBAR_RIGHT], true, Style::default(), Align::End);
+                            });
+                            for e in at(a::HOTBAR, true) {
+                                emit(ui, e, Style::default(), Align::Center);
+                            }
+                        });
+                        ui.container(Style::default().grow(), |_| {});
+                        stack(ui, &[a::BOTTOM_RIGHT], true, Style::default().w(0.0), Align::End);
+                    });
+                },
+            );
+            for e in placed.iter().filter(|p| p.at.is_some() && p.scale == scale) {
+                let [ax, ay, x, y] = e.at.unwrap_or_default();
+                emit(ui, e, Style::default().at(ax * window.x + x, ay * window.y + y, [ax, ay]), Align::Start);
+            }
+            for (s, alpha) in up(None).into_iter().filter(|_| scale.is_none()) {
+                let [ax, ay] = s.at.unwrap_or_default();
+                ui.container(Style::default().at(ax * window.x, ay * window.y, [ax, ay]), |ui| {
+                    shown_text(ui, s, alpha, lang, Some(input));
+                });
+            }
+        };
+        let window = self.ui.size;
+        tree(&mut self.ui, window, None);
+        self.scaled.resize_with(scales.len(), Default::default);
+        for (&s, (own, ui)) in scales.iter().zip(&mut self.scaled) {
+            *own = s;
+            tree(ui, window * gui as f32 / s as f32, Some(s));
         }
+        self.flowing = flowing;
         true
     }
 }
