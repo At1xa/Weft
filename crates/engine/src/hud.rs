@@ -379,9 +379,30 @@ impl Hud {
         self.layout.get(name).is_some_and(|p| p.hidden)
     }
 
+    pub fn gui_scale(&self) -> u32 {
+        self.gui
+    }
+
     /// The largest GUI scale the window takes.
     pub fn max_scale(&self) -> u32 {
         self.max.max(1)
+    }
+
+    pub fn scale(&self, name: &str) -> Option<u32> {
+        self.layout.get(name).and_then(|p| p.scale)
+    }
+
+    /// Gives an element its own scale, or the GUI's back with `None`; a free one keeps its place.
+    pub fn set_scale(&mut self, name: &str, scale: Option<u32>) {
+        let (gui, from) = (self.gui.max(1), self.zoom(name));
+        let to = scale.unwrap_or(gui).min(self.max_scale()) as f32 / gui as f32;
+        let p = self.layout.entry(name.to_string()).or_default();
+        if let Some(at) = &mut p.at {
+            (at[2], at[3]) = (at[2] * from / to, at[3] * from / to);
+        }
+        p.scale = scale;
+        self.key = None;
+        self.save();
     }
 
     /// The smallest element under a point, so one lying inside another can be reached.
