@@ -170,6 +170,8 @@ impl Placement {
 pub struct Edit {
     pub selected: Option<String>,
     pub grid: bool,
+    /// Just shown, until the cursor leaves it.
+    pub showing: Option<String>,
 }
 
 /// When a line of the F3 overlay shows.
@@ -371,6 +373,10 @@ impl Hud {
     /// An element's size in the GUI's pixels, nothing for one not drawn.
     fn size(&self, name: &str) -> [f32; 2] {
         self.element_rect(name).map_or([0.0; 2], |r| [r.w, r.h])
+    }
+
+    pub fn hidden(&self, name: &str) -> bool {
+        self.layout.get(name).is_some_and(|p| p.hidden)
     }
 
     /// The largest GUI scale the window takes.
@@ -775,15 +781,19 @@ impl Hud {
                 });
             }
         };
-        let selected = edit.as_ref().and_then(|e| e.selected.clone());
+        let green = |n: &str| {
+            edit.as_ref()
+                .is_some_and(|e| e.selected.as_deref() == Some(n) || e.showing.as_deref() == Some(n))
+        };
         // An element's own node, which carries its place: empty ones leave no gap in the flow,
-        // and in the editor have a size to take hold of.
+        // and in the editor have a size to take hold of. Hidden ones are red, selected or
+        // just shown ones green.
         let emit = |ui: &mut Ui, e: &Placed, style: Style, align: Align| {
             let class = editing.then(|| {
-                if selected.as_deref() == Some(e.name.as_str()) {
-                    "hud_frame_selected"
-                } else if e.hidden {
+                if e.hidden {
                     "hud_frame_hidden"
+                } else if green(&e.name) {
+                    "hud_frame_selected"
                 } else {
                     "hud_frame"
                 }
