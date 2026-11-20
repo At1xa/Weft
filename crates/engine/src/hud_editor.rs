@@ -305,13 +305,14 @@ impl Screen for HudEditor {
         });
         ui.set_id(tools, "hud_tools");
         if !self.confirm_reset {
-        // In the top right corner of the element under the cursor: hiding or showing it.
-        if let Some((name, r, hidden)) = &self.mark {
-            let r = reach(*r);
-            corner(ui, cx, [r.x, r.y, 0.0, 0.0], "core:gui/icon_sort", "hud.edit.options", name, Pending::Options);
-            let (icon, tip) = if *hidden { ("core:gui/icon_verified", "hud.edit.show") } else { ("core:gui/close", "hud.edit.hide") };
-            corner(ui, cx, [r.x + r.w, r.y, 1.0, 0.0], icon, tip, name, Pending::ToggleHidden);
-        }
+            // Touch controls keep their top right corner for resizing.
+            if let Some((name, r, hidden)) = &self.mark {
+                let r = reach(*r);
+                corner(ui, cx, [r.x, r.y, 0.0, 0.0], "core:gui/icon_sort", "hud.edit.options", name, Pending::Options);
+                let (icon, tip) = if *hidden { ("core:gui/icon_verified", "hud.edit.show") } else { ("core:gui/close", "hud.edit.hide") };
+                let bottom = if crate::touch::is_touch(name) { 1.0 } else { 0.0 };
+                corner(ui, cx, [r.x + r.w, r.y + bottom * r.h, 1.0, bottom], icon, tip, name, Pending::ToggleHidden);
+            }
         }
         if self.confirm_reset {
             let modal = ui.panel(
