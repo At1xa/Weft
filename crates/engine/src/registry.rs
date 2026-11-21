@@ -562,6 +562,13 @@ pub struct SoundDef {
     pub range: f32,
     pub full_within: f32,
     pub falloff: i32,
+    pub through_walls: f32,
+}
+
+impl SoundDef {
+    pub fn reach(&self, volume: f32) -> f64 {
+        f64::from(self.range * volume.max(1.0))
+    }
 }
 
 pub struct MusicDef {
@@ -3024,6 +3031,17 @@ fn engine_sounds() -> Vec<RawEntry> {
     vec![
         one("core:ui.click", "core:ui/click", "core:ui", 0.6, [1.0, 1.0]),
         one("core:item.pickup", "core:item/pickup", "core:players", 0.4, [1.4, 2.2]),
+        one("core:weather.thunder_crack", "core:weather/thunder_crack", "core:ambient", 0.95, [1.0, 1.0])
+            .set(s::RANGE, crate::weather::THUNDER_RANGE as f32)
+            .set(s::FULL_WITHIN, 48.0f32),
+        one("core:weather.thunder_roll", "core:weather/thunder_roll", "core:ambient", 0.92, [1.0, 1.0])
+            .set(s::RANGE, crate::weather::THUNDER_RANGE as f32)
+            .set(s::THROUGH_WALLS, 0.18f32)
+            .set(s::FULL_WITHIN, 48.0f32),
+        one("core:weather.thunder_rumble", "core:weather/thunder_rumble", "core:ambient", 0.92, [1.0, 1.0])
+            .set(s::RANGE, crate::weather::THUNDER_RANGE as f32)
+            .set(s::THROUGH_WALLS, 0.30f32)
+            .set(s::FULL_WITHIN, 48.0f32),
     ]
 }
 
@@ -3047,6 +3065,7 @@ fn bake_sound(e: &Entry, categories: &[SoundCategory], errors: &mut Vec<String>)
         range: e.or(s::RANGE, 16.0f32).max(1.0),
         full_within: e.or(s::FULL_WITHIN, 1.0f32).max(0.0),
         falloff: e.or(s::FALLOFF, 0i32).clamp(-8, 8),
+        through_walls: e.or(s::THROUGH_WALLS, 0.0f32).max(0.0).min(1.0),
     }
 }
 

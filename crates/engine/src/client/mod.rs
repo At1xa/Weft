@@ -1,9 +1,11 @@
+mod acoustics;
 pub mod camera;
 pub mod ctm;
 pub mod entity_render;
 pub mod environment;
 pub mod gizmo;
 pub mod glow;
+mod lightning;
 pub mod lod;
 pub mod looks;
 pub mod mesher;
@@ -761,6 +763,7 @@ pub struct Client {
     hit_dust: f32,
     /// Sounds to play this frame (from the server and from here).
     pub sounds: Vec<crate::audio::Play>,
+    soundscape: acoustics::Soundscape,
     rng: weft_noise::Rng,
     pub dead: bool,
     /// A server override and the weather at the camera.
@@ -771,8 +774,7 @@ pub struct Client {
     look: weft_abi::WeatherLook,
     pub environment: environment::Environment,
     frame_dt: f32,
-    /// Seconds left of a lightning's flash.
-    lightning: f32,
+    lightning: lightning::LightningEffects,
     /// Holding the use button on an item that takes time: ticks held, ticks in all.
     using: Option<(f32, f32)>,
     /// Who else is mining what, and how far along.
@@ -1072,6 +1074,7 @@ impl Client {
             hand_late: CommandList::default(),
             hit_dust: 0.0,
             sounds: Vec::new(),
+            soundscape: acoustics::Soundscape::default(),
             rng: weft_noise::Rng(0x9E37_79B9_7F4A_7C15),
             drag: None,
             sweep: Vec::new(),
@@ -1114,7 +1117,7 @@ impl Client {
             weather_id: 0,
             look: Default::default(),
             environment: Default::default(),
-            lightning: 0.0,
+            lightning: lightning::LightningEffects::default(),
             using: None,
             others_mining: Vec::new(),
             told_mining: None,
@@ -1222,6 +1225,9 @@ impl Client {
         self.meshes.clear();
         self.landings.clear();
         self.weather_override = None;
+        self.lightning.clear();
+        self.sounds.clear();
+        self.soundscape = acoustics::Soundscape::default();
         self.world.dim = dim;
         self.terrain_resets += 1;
         self.terrain_view = (IVec3::MAX, 0);
@@ -1287,6 +1293,7 @@ impl Client {
         let moved = self.animate_player(input, dt);
         self.frame_dt = dt as f32;
         self.weather_effects(dt as f32);
+        self.lightning.advance();
         // Night vision comes and goes over about half a second, not at once.
         let night = self
             .attribute(crate::registry::attr::NIGHT_VISION)
@@ -2725,6 +2732,8 @@ impl Client {
                 cutoff: self.environment.values.lowpass,
                 reverb: self.environment.values.reverb,
                 volume: self.environment.values.volume,
+                feedback: if self.soundscape.reverb > 0.005 { self.soundscape.feedback } else { 0.85 },
+                damping: if self.soundscape.reverb > 0.005 { self.soundscape.damping } else { 0.60 },
             },
             dim: self.world.dim,
             holds: c
@@ -2737,6 +2746,30 @@ impl Client {
                 })
                 .collect(),
         }
+    }
+
+    pub(crate) fn play_audio(
+        &mut self,
+        audio: &mut crate::audio::Audio,
+        assets: &crate::assets::Assets,
+        listener: DVec3,
+        other: impl IntoIterator<Item = crate::audio::Play>,
+    ) {
+        let liquids = world::LiquidSampler { world: &self.world, entities: &self.entities, tick: self.anim_tick() };
+        self.soundscape
+            .play(liquids, listener, audio, assets, self.sounds.drain(..).chain(other));
+    }
+
+    pub(crate) fn source_filter(&self, source: DVec3, listener: DVec3) -> crate::audio::SourceFilter {
+        let liquids = self.liquid_sampler();
+        liquids
+            .at_source(source, listener)
+            .map_or_else(Default::default, |liquid| crate::audio::SourceFilter::from_liquid(liquid, liquids.at(listener)))
+    }
+
+    pub(crate) fn discard_audio(&mut self) {
+        self.sounds.clear();
+        self.soundscape.discard_pending();
     }
 
     /// No sky light at the camera: a cave, or under a roof.
@@ -3056,21 +3089,11 @@ impl Client {
     }
 
     fn visible_liquid(&self, point: DVec3) -> Option<u16> {
-        let (liquid, dry) = self.liquid_observation(point)?;
-        (!dry).then_some(liquid)
+        self.liquid_sampler().at(point)
     }
 
-    fn liquid_observation(&self, point: DVec3) -> Option<(u16, bool)> {
-        let c = content();
-        let cells = world::SeenCells { world: &self.world, air_if_missing: false };
-        let liquid = physics::liquid_at(c, &cells, point)?;
-        let tick = self.anim_tick();
-        let dry = self
-            .entities
-            .values()
-            .filter(|e| !e.dry_boxes.is_empty())
-            .any(|e| physics::inside_dry_volume((e.place_at(tick), &e.dry_boxes), point));
-        Some((liquid, dry))
+    fn liquid_sampler(&self) -> world::LiquidSampler<'_> {
+        world::LiquidSampler { world: &self.world, entities: &self.entities, tick: self.anim_tick() }
     }
 
     /// With the view not bobbing walking (`core:camera_bob` off) where it would, the bob the hand
@@ -3165,12 +3188,10 @@ impl Client {
 
     /// Simulation daylight used by conditions and prediction, independent of perception overrides.
     pub fn daylight(&self) -> f32 {
-        let day = content().dims[self.world.dim as usize].daylight(self.world.time) * (1.0 - self.look.darkness);
-        if self.lightning > 0.0 { (day + 0.5).min(1.0) } else { day }
+        content().dims[self.world.dim as usize].daylight(self.world.time) * (1.0 - self.look.darkness)
     }
 
-    /// The weather's look going over to the current one's, its sound now and then, and a
-    /// lightning's flash (`weather` draws the precipitation).
+    /// Blend the weather at the camera and play its ambient sound.
     fn weather_effects(&mut self, dt: f32) {
         self.weather_id = self.weather_at(self.camera().pos);
         let weather = &content().game.weathers[self.weather_id as usize];
@@ -3184,10 +3205,6 @@ impl Client {
         go(&mut l.cloud_gray, to.cloud_gray);
         go(&mut l.cloud_dark, to.cloud_dark);
         go(&mut l.darkness, to.darkness);
-        self.lightning = (self.lightning - dt).max(0.0);
-        if weather.lightning() && self.chance() < dt / 12.0 {
-            self.lightning = 0.15;
-        }
         if let Some(sound) = weather
             .sound
             .filter(|_| self.look.falls > 0.5 && !self.enclosed())
@@ -3223,6 +3240,7 @@ impl Client {
     fn scene(&self, cam: &Camera, frame: &FrameInfo) -> Scene {
         let environment = &self.environment.values;
         let (fog_start, fog_end) = (environment.fog_start, environment.fog_end);
+        let (lightning_start, lightning_end) = self.lightning.lights(cam.pos);
         let aspect = frame.width as f32 / frame.height.max(1) as f32;
         let view = cam.view();
         let inv = view.inverse();
@@ -3249,12 +3267,13 @@ impl Client {
             environment: [environment.sunlight, environment.cloud_fog_start, environment.cloud_fog_end, self.environment.rain_mist],
             sun: self.sun(),
             cloud: Default::default(),
-            atmosphere_grid: [0; 4],
+            atmosphere_extent: [0; 4],
             cloud_lod: [cloud_lod, cloud_lod * 1.35, 0.0, 0.0],
             cloud_cache: [0; 4],
             atmosphere_cache: [0; 4],
-            atmosphere_previous: [[0.0; 4]; 4],
-            atmosphere_shift: [0.0; 4],
+            rain_cover: [0.0; 4],
+            lightning_start,
+            lightning_end,
         }
     }
 
@@ -3363,8 +3382,6 @@ impl Client {
         let ticks = self.smooth_time();
         let weather_ticks = ticks - self.world.time as f64 + self.world.ticks as f64;
         let weather = self.weather_field(weather_ticks);
-        let rain_veil =
-            !crate::world::light::enclosed(&content().dims[self.world.dim as usize], self.world.light(cam.pos.floor().as_ivec3()));
         let environment = &self.environment.values;
         let world_depth = (self.sky.has_atmosphere()
             && weather.clouds.is_some()
@@ -3383,22 +3400,23 @@ impl Client {
             &cam,
             scene_buf,
             world_depth,
-            self.world.dim as usize,
+            &self.world,
             ticks,
             weather,
-            rain_veil,
+            self.render.occlusion.has_pyramid(),
+            scene.cloud_lod[1].min(environment.cloud_fog_end),
             self.camera().pos.y,
             &self.environment.values,
+            &self.lightning,
             &self.environment.sky,
             &overlays,
         );
         scene.cloud = cloud;
         if let Some(ref atmosphere) = atmosphere {
-            scene.atmosphere_grid = atmosphere.grid;
+            scene.atmosphere_extent = [frame.width, frame.height, 0, 0];
             scene.atmosphere_cache = atmosphere.cache;
             scene.cloud_cache = atmosphere.cloud_origin;
-            scene.atmosphere_previous = atmosphere.previous;
-            scene.atmosphere_shift = atmosphere.shift;
+            scene.rain_cover = atmosphere.cover_origin;
         }
         gpu.mapped(scene_buf)[..size_of::<Scene>()].copy_from_slice(bytemuck::bytes_of(&scene));
         self.render
