@@ -720,6 +720,8 @@ pub mod comp {
         pub const RANGE: &str = "sound.range";
         pub const FULL_WITHIN: &str = "sound.full_within";
         pub const FALLOFF: &str = "sound.falloff";
+        /// Minimum gain through cover, still subject to the obstruction's low-pass filter (`f32`, 0).
+        pub const THROUGH_WALLS: &str = "sound.through_walls";
         pub const CATEGORY: &str = "sound.category";
     }
 
@@ -1243,6 +1245,8 @@ pub mod comp {
     pub mod block {
         /// Mass per full block relative to a block of water (`f32`).
         pub const DENSITY: &str = "density";
+        /// Fraction of a sound's amplitude lost at a reflection (`f32`, 0..1).
+        pub const SOUND_ABSORPTION: &str = "sound_absorption";
         /// The force a block puts on its body when fully powered.
         pub const THRUST: &str = "thrust";
         pub const GUIDE_RAIL: &str = "guide_rail";
@@ -1273,6 +1277,13 @@ pub mod comp {
         pub const MODEL: &str = "block.model";
         /// Item sprite from this face (u8, FACE_DIRS); 255 draws the model.
         pub const ITEM_FACE: &str = "block.item_face";
+        pub const RANDOM_OFFSET: &str = "block.random_offset";
+        pub const RANDOM_HEIGHT_SCALE: &str = "block.random_height_scale";
+        pub const RANDOM_WIDTH_SCALE: &str = "block.random_width_scale";
+        pub const RANDOM_SCALE: &str = "block.random_scale";
+        pub const RANDOM_YAW: &str = "block.random_yaw";
+        pub const RANDOM_PITCH: &str = "block.random_pitch";
+        pub const RANDOM_ROLL: &str = "block.random_roll";
         pub const TEXTURES: &str = "block.textures";
         pub const TURNS: &str = "block.turns";
         pub const TURN: &str = "block.turn";
