@@ -396,6 +396,7 @@ pub(crate) fn engine_assets(dev: bool) -> PathBuf {
 #[derive(Default, PartialEq)]
 struct Applied {
     vsync: bool,
+    frame_interval: Option<Duration>,
     view: i32,
     language: String,
     gui_scale: u32,
@@ -1220,6 +1221,21 @@ impl Running {
             use crate::server::menu::{
                 CLONE, GATHER, HOTBAR_SWAP, OFF_HAND_SWAP, PICK_SAME, THROW, THROW_ALL, TO_TRASH, WHEEL_DOWN, WHEEL_UP,
             };
+            // A release and a new press can both land between two frames.
+            if g.client
+                .drag
+                .as_ref()
+                .is_some_and(|(button, _)| !self.input.held_button(*button) || self.input.pressed_button(*button))
+            {
+                let (button, slots) = g.client.drag.take().unwrap();
+                if slots.len() == 1 {
+                    g.client
+                        .send(net::ToServer::Click { slot: slots[0], button, shift: false });
+                } else {
+                    g.client.send(net::ToServer::Drag { slots, button });
+                }
+                self.quads_dirty = true;
+            }
             let typing = ui
                 .focused
                 .is_some_and(|f| matches!(ui.nodes[f].kind, Kind::Input { .. }));
@@ -1249,14 +1265,13 @@ impl Running {
                         g.client.sweep.extend(slot);
                     }
                     match slot {
-                        // Double click: the rest of the stack just picked up joins it (the
-                        // server knows what is on the cursor even before we do).
+                        // The server tries to gather or applies a normal click with its cursor state.
                         Some(s) if double && !shift => {
                             g.client
                                 .send(net::ToServer::Click { slot: s, button: GATHER, shift: false });
                             g.client.last_click = None;
                         }
-                        Some(s) if holding && !shift && g.client.drag.is_none() => {
+                        Some(s) if holding && !shift && self.input.held_button(button) && g.client.drag.is_none() => {
                             g.client.drag = Some((button, vec![s]));
                             self.quads_dirty = true;
                         }
@@ -1322,21 +1337,10 @@ impl Running {
                 }
             }
             if let Some((button, slots)) = &mut g.client.drag {
-                if self.input.held_button(*button) {
-                    // A right-button drag leaves one more each time it comes back onto a slot.
-                    let again = |s: &u32| if *button == 1 { slots.last() != Some(s) } else { !slots.contains(s) };
-                    if let Some(s) = slot.filter(again) {
-                        slots.push(s);
-                        self.quads_dirty = true;
-                    }
-                } else {
-                    let (button, slots) = g.client.drag.take().unwrap();
-                    if slots.len() == 1 {
-                        g.client
-                            .send(net::ToServer::Click { slot: slots[0], button, shift: false });
-                    } else {
-                        g.client.send(net::ToServer::Drag { slots, button });
-                    }
+                // A right-button drag leaves one more each time it comes back onto a slot.
+                let again = |s: &u32| if *button == 1 { slots.last() != Some(s) } else { !slots.contains(s) };
+                if let Some(s) = slot.filter(again) {
+                    slots.push(s);
                     self.quads_dirty = true;
                 }
             }
@@ -1656,8 +1660,10 @@ impl Running {
     /// command or a test.
     fn apply_settings(&mut self) {
         use crate::settings as s;
+        let fps_limit = s::fps_limit();
         let mut now = Applied {
             vsync: s::vsync(),
+            frame_interval: (fps_limit > 0).then(|| Duration::from_secs_f64(1.0 / f64::from(fps_limit))),
             view: s::view_distance(),
             language: s::language(),
             gui_scale: s::gui_scale(),
@@ -2050,9 +2056,17 @@ impl ApplicationHandler for App {
                 r.input.cursor = Vec2::new(position.x as f32, position.y as f32);
             }
             WindowEvent::RedrawRequested => {
+                let now = Instant::now();
+                if r.applied
+                    .frame_interval
+                    .is_some_and(|interval| now < r.last + interval)
+                    && !r.quit
+                {
+                    return;
+                }
                 let aim = r.aim();
                 r.touches.tick(&mut r.input, aim);
-                if frame(r, &self.opts) || r.quit {
+                if frame(r, &self.opts, now) || r.quit {
                     r.leave_world_silent();
                     el.exit();
                 }
@@ -2061,8 +2075,16 @@ impl ApplicationHandler for App {
         }
     }
 
-    fn about_to_wait(&mut self, _el: &ActiveEventLoop) {
+    fn about_to_wait(&mut self, el: &ActiveEventLoop) {
         if let Some(r) = &self.run {
+            if let Some(interval) = r.applied.frame_interval {
+                let next = r.last + interval;
+                if next > Instant::now() && !r.quit {
+                    el.set_control_flow(ControlFlow::WaitUntil(next));
+                    return;
+                }
+            }
+            el.set_control_flow(ControlFlow::Poll);
             r.window.request_redraw();
         }
     }
@@ -2085,9 +2107,8 @@ struct UiCallbacks {
 }
 
 /// One frame. Returns true when the app should quit.
-fn frame(r: &mut Running, opts: &Options) -> bool {
+fn frame(r: &mut Running, opts: &Options, now: Instant) -> bool {
     r.retired = None;
-    let now = Instant::now();
     let dt = (now - r.last).as_secs_f64();
     r.last = now;
     let scale = r.gui_scale();
@@ -2937,6 +2958,7 @@ fn record_passes(r: &mut Running, info: &weft_render::FrameInfo, scale: f32) {
             .render
             .occlusion
             .take_depth(&mut *r.gpu, &mut r.list, r.depth.0, [r.depth.1, r.depth.2], atmosphere);
+        g.client.sample_atmosphere(&mut r.list);
     }
     if !after.cmds.is_empty() {
         r.list
